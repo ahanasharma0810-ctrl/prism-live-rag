@@ -146,7 +146,9 @@ class StreamingEngine:
         t = time.perf_counter()
         run.results = await asyncio.to_thread(self._search, run.event.query)
         run.latency_ms = (time.perf_counter() - t) * 1000
-        if run.subquery_id is not None:
+        # only the search for the sub-query's latest query may set its results: an older
+        # (e.g. provisional) search can finish later and must not overwrite newer results
+        if run.subquery_id is not None and st.searched.get(run.subquery_id) == run.event.query:
             st.sub_results[run.subquery_id] = run.results
         st.trace.emit(
             ev.RETRIEVAL_COMPLETED,

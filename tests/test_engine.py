@@ -137,3 +137,22 @@ async def test_cache_disabled_searches_again(stack, tmp_path):
     eng = StreamingEngine(Settings(log_dir=tmp_path, cache_similarity=0.0), stack=stack, telemetry=TelemetryLogger(None))
     result = await eng.run_turn(chunks_from_text(["Describe the telemetry trace coverage gate", "in detail"]))
     assert len(result.retrieval_events) == 2
+
+
+async def test_late_finishing_stale_search_does_not_overwrite_newer_results(stack, tmp_path):
+    """A provisional search that completes after the sub-query's newer search must be ignored."""
+    eng = StreamingEngine(Settings(log_dir=tmp_path, cache_similarity=0.0), stack=stack,
+                          telemetry=TelemetryLogger(None))
+    original = eng._search
+
+    def slow_first(query, _calls=[0]):
+        _calls[0] += 1
+        if _calls[0] == 1:
+            import time as _t
+            _t.sleep(0.2)  # the first (provisional) search finishes last
+        return original(query)
+
+    eng._search = slow_first
+    result = await eng.run_turn(chunks_from_text(["Describe the telemetry trace coverage gate", "and token cost"]))
+    last_q1 = [r for r in result.retrievals if r.subquery_id == result.sub_queries[0].id][-1]
+    assert result.sub_results[result.sub_queries[0].id] == last_q1.results
