@@ -6,11 +6,16 @@ arrive, and grounds every claim in a `[Doc_ID §Section]` citation.
 The problem statement is the Theme 4 guide (transcribed into `data/corpus/Doc_01.md`).
 The build plan is `docs/agent_playbook.md`.
 
-> **Status: Phase 1 (Framing & Foundation) complete.** The repo has a clean, indexed corpus,
-> structured schemas, a non-streaming **baseline** pipeline, dev scenarios and baseline
-> metrics. Streaming control, decomposition, session refinement and full telemetry are
-> Phases 2-5 and are **not** implemented yet (their modules are placeholders).
-> See `reports/PHASE_1_REPORT.md`.
+> **Status: Phase 2 (Controller & Live Stream Simulation) complete.**
+> * Phase 1: a clean indexed corpus, schemas, a non-streaming **baseline**, dev scenarios and metrics.
+> * Phase 2: a stream simulator, a presentation-only suppression gate, a BM25 stability probe,
+>   a wait/retrieve/suppress **controller**, and a streaming engine that starts retrieval
+>   before the utterance ends (G2 = 0.97 on the dev set).
+>
+> Decomposition, session refinement, grounding verification and full telemetry are
+> Phases 3-5 and are **not** implemented yet (their modules are placeholders).
+> See `reports/PHASE_1_REPORT.md`, `reports/PHASE_2_REPORT.md` and
+> `reports/PHASE_2_CONTROLLER_ABLATION.md`.
 
 ## Quick start (CPU only, no model downloads)
 
@@ -24,7 +29,13 @@ make audit            # corpus audit
 make index            # build BM25 + dense indexes, write indexes/chunks.jsonl
 make baseline Q="What are the technical evaluation gates and their target thresholds?"
 make eval             # baseline over eval/dev_scenarios: recall@5, citation validity, latency
+make stream U="Which gate covers | early retrieval | and how is it validated?"   # streaming controller demo
+make controller       # G2 early retrieval / false triggers / seconds gained over the dev scenarios
+make ablate           # controller ablation + threshold grid -> reports/PHASE_2_CONTROLLER_ABLATION.md
 ```
+
+Add `--clock wall` to `python -m src.engine ...` to replay fragments at real speed, and
+`--prior "..."` to simulate an earlier answer in the session (needed for suppression).
 
 Without `make`: `python -m pytest -q`, `python -m src.corpus.build_index`,
 `python -m src.baseline --query "..."`, `python eval/run_eval.py --system baseline`.
@@ -39,7 +50,18 @@ Output of the baseline is the record defined in the problem statement:
 Telemetry for every request is appended to `logs/telemetry.jsonl`
 (schema: `schemas/telemetry_event.schema.json`).
 
-## Architecture (Phase 1)
+## Architecture
+
+Streaming path (Phase 2):
+
+```
+transcript chunks ─► simulator ─► suppression gate ─► stability probe ─► controller ─► retrieve? ─► hybrid search + rerank
+ (ts, text)          (simulated     presentation-only?   BM25 top-k Jaccard  wait / retrieve     (background task, logs
+                      or wall)      -> suppress          + content check     (provisional|final) retrieval_started)
+                                                                             / suppress
+```
+
+Baseline path (Phase 1):
 
 ```
 utterance ─► hybrid retrieval ─► rerank ─► evidence threshold ─► synthesis ─► citation check ─► OutputRecord
@@ -61,8 +83,10 @@ utterance ─► hybrid retrieval ─► rerank ─► evidence threshold ─►
 | `src/synthesis/` | `generator.py` (extractive or LLM), `citations.py`, `uncertainty.py` |
 | `src/telemetry/` | JSONL event logger and event types |
 | `src/baseline.py` | non-streaming reference pipeline |
-| `eval/` | dev scenarios and `run_eval.py`. **Never imported by `src/`** (enforced by a test) |
-| `src/stream/`, `src/decompose/`, `src/session/`, `src/engine.py`, `src/retrieval/cache.py`, `src/synthesis/grounding.py` | placeholders for Phases 2-4 |
+| `src/stream/` | `simulator.py` (replay), `suppression.py` (presentation-only gate), `stability.py` (probe), `controller.py` (policy + LLM controller option) |
+| `src/engine.py` | streaming engine: controller decisions, background retrieval dispatch, telemetry |
+| `eval/` | dev scenarios, `run_eval.py`, `controller_eval.py`, `ablate_controller.py`. **Never imported by `src/`** (enforced by a test) |
+| `src/decompose/`, `src/session/`, `src/retrieval/cache.py`, `src/synthesis/grounding.py` | placeholders for Phases 3-4 |
 
 ### Citations and ids
 
@@ -86,6 +110,10 @@ no downloads:
 | `PRISM_RRF_K` / `PRISM_CANDIDATES` / `PRISM_TOP_K` | 60 / 20 / 5 | |
 | `PRISM_MIN_EVIDENCE_SCORE` | 0.34 | not tuned; see report |
 | `PRISM_CHUNK_MAX_TOKENS` / `PRISM_CHUNK_OVERLAP_TOKENS` | 400 / 40 | |
+| `PRISM_CONTROLLER_MODE` | `rule_only` (tuned) | `rule_stability`, `llm` (needs an LLM) |
+| `PRISM_STABILITY_THRESHOLD` / `PRISM_STABLE_CHUNKS` / `PRISM_MAX_PROVISIONAL` | 0.2 / 1 / 1 | tuned in step 2.7 |
+| `PRISM_PROBE_K` / `PRISM_PROBE_MIN_CONTENT_TERMS` / `PRISM_PROBE_MIN_TOKENS` | 3 / 2 / 4 | tuned in step 2.7 |
+| `PRISM_GATE_THRESHOLD` | 0.5 | suppression-gate classifier fallback |
 
 ## Teammate setup (infrastructure, not done in Phase 1)
 
@@ -103,6 +131,8 @@ Nothing in this list has been run or verified yet.
    * The HTTP request/response handling has only been tested against a local stub server.
      Run one real request and check that token counts arrive in `logs/telemetry.jsonl`.
    * Set `PRISM_COST_PER_1K_INPUT/OUTPUT` if the endpoint is billed.
+   * Then run the missing Phase 2 ablation arm: `PRISM_LLM_PROVIDER=... make ablate`, which
+     adds the measured `llm` controller row to `reports/PHASE_2_CONTROLLER_ABLATION.md`.
 3. **Dense model / reranker (optional).** `make install-optional` installs
    sentence-transformers + faiss-cpu (pulls PyTorch). Verify RAM on the 4 GB target, pin the
    versions in `requirements-optional.txt`, then set `PRISM_DENSE_BACKEND=sentence_transformers`
@@ -115,5 +145,6 @@ Nothing in this list has been run or verified yet.
 * Corpus isolation: answers come only from `data/corpus/`; the extractive path quotes it verbatim.
 * No hardcoded prompts, queries or answers in `src/`; dev scenarios live in `eval/` only.
 * Every claim carries a citation that exists in the corpus, or the system emits uncertainty.
-* No cross-session state (the baseline is stateless).
+* No cross-session state (the baseline is stateless; the controller's state is reset per utterance).
+* Presentation-only turns are suppressed and never reach the corpus.
 * No multi-agent frameworks.
