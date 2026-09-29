@@ -43,6 +43,9 @@ class Settings:
 
     min_evidence_score: float = field(default_factory=lambda: float(_env("PRISM_MIN_EVIDENCE_SCORE", "0.34")))
 
+    # suppression gate (phase 2)
+    gate_threshold: float = field(default_factory=lambda: float(_env("PRISM_GATE_THRESHOLD", "0.5")))
+
     llm_provider: str = field(default_factory=lambda: _env("PRISM_LLM_PROVIDER", "none"))
     llm_model: str = field(default_factory=lambda: _env("PRISM_LLM_MODEL", ""))
     llm_base_url: str = field(default_factory=lambda: _env("PRISM_LLM_BASE_URL", "http://localhost:11434"))
