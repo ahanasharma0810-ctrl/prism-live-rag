@@ -1,0 +1,38 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "text": {
+      "title": "Text",
+      "type": "string"
+    },
+    "subintent_id": {
+      "title": "Subintent Id",
+      "type": "string"
+    },
+    "chunk_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Chunk Ids",
+      "type": "array"
+    },
+    "version": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "id",
+    "text",
+    "subintent_id",
+    "chunk_ids"
+  ],
+  "title": "Claim",
+  "type": "object"
+}

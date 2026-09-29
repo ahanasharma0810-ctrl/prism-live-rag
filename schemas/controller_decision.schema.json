@@ -1,0 +1,42 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "wait",
+        "retrieve",
+        "suppress"
+      ],
+      "title": "Action",
+      "type": "string"
+    },
+    "reason": {
+      "title": "Reason",
+      "type": "string"
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "enum": [
+            "provisional",
+            "multi_intent",
+            "final"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Set when action == 'retrieve'.",
+      "title": "Trigger"
+    }
+  },
+  "required": [
+    "action",
+    "reason"
+  ],
+  "title": "ControllerDecision",
+  "type": "object"
+}
