@@ -6,16 +6,19 @@ arrive, and grounds every claim in a `[Doc_ID §Section]` citation.
 The problem statement is the Theme 4 guide (transcribed into `data/corpus/Doc_01.md`).
 The build plan is `docs/agent_playbook.md`.
 
-> **Status: Phase 2 (Controller & Live Stream Simulation) complete.**
+> **Status: Phase 3 (Multi-Intent Parsing & Evidence Fusion) complete.**
 > * Phase 1: a clean indexed corpus, schemas, a non-streaming **baseline**, dev scenarios and metrics.
-> * Phase 2: a stream simulator, a presentation-only suppression gate, a BM25 stability probe,
->   a wait/retrieve/suppress **controller**, and a streaming engine that starts retrieval
->   before the utterance ends (G2 = 0.97 on the dev set).
+> * Phase 2: a stream simulator, a presentation-only suppression gate, a stability probe and a
+>   wait/retrieve/suppress **controller** that starts retrieval early (G2 = 0.97 on the dev set).
+> * Phase 3: a multi-intent **decomposer** (add/keep/merge diffs; rule-based on CPU, LLM when
+>   configured), an anti-fragmentation guard, context carry-over, parallel per-sub-query
+>   retrieval, cross-intent **evidence fusion** with a per-intent quota, and a speculative
+>   reuse cache (G3 = 0.75, 0/22 single-intent turns over-split).
 >
-> Decomposition, session refinement, grounding verification and full telemetry are
-> Phases 3-5 and are **not** implemented yet (their modules are placeholders).
-> See `reports/PHASE_1_REPORT.md`, `reports/PHASE_2_REPORT.md` and
-> `reports/PHASE_2_CONTROLLER_ABLATION.md`.
+> Session refinement, grounding verification and full telemetry are Phases 4-5 and are
+> **not** implemented yet (`src/session/`, `src/synthesis/grounding.py` are placeholders).
+> See `reports/PHASE_1_REPORT.md`, `reports/PHASE_2_REPORT.md`, `reports/PHASE_3_REPORT.md`
+> and the ablation reports in `reports/`.
 
 ## Quick start (CPU only, no model downloads)
 
@@ -29,13 +32,16 @@ make audit            # corpus audit
 make index            # build BM25 + dense indexes, write indexes/chunks.jsonl
 make baseline Q="What are the technical evaluation gates and their target thresholds?"
 make eval             # baseline over eval/dev_scenarios: recall@5, citation validity, latency
-make stream U="Which gate covers | early retrieval | and how is it validated?"   # streaming controller demo
+make stream U="What does the stability probe compute? | And which gate measures | early retrieval?"   # streaming demo
+make decompose        # G3 multi-intent identification + fusion metrics over the dev scenarios
+make ablate3          # phase 3 ablations -> reports/PHASE_3_ABLATION.md
 make controller       # G2 early retrieval / false triggers / seconds gained over the dev scenarios
 make ablate           # controller ablation + threshold grid -> reports/PHASE_2_CONTROLLER_ABLATION.md
 ```
 
-Add `--clock wall` to `python -m src.engine ...` to replay fragments at real speed, and
-`--prior "..."` to simulate an earlier answer in the session (needed for suppression).
+Add `--clock wall` to `python -m src.engine ...` to replay fragments at real speed,
+`--prior "..."` to simulate an earlier answer in the session (needed for suppression), and
+`--no-decompose` for the Phase 2 single-query behaviour.
 
 Without `make`: `python -m pytest -q`, `python -m src.corpus.build_index`,
 `python -m src.baseline --query "..."`, `python eval/run_eval.py --system baseline`.
@@ -52,13 +58,19 @@ Telemetry for every request is appended to `logs/telemetry.jsonl`
 
 ## Architecture
 
-Streaming path (Phase 2):
+Streaming path (Phases 2-3):
 
 ```
-transcript chunks ─► simulator ─► suppression gate ─► stability probe ─► controller ─► retrieve? ─► hybrid search + rerank
- (ts, text)          (simulated     presentation-only?   BM25 top-k Jaccard  wait / retrieve     (background task, logs
-                      or wall)      -> suppress          + content check     (provisional|final) retrieval_started)
-                                                                             / suppress
+transcript chunks ─► simulator ─► suppression gate ─► stability probe ─► controller (wait / retrieve / suppress)
+                                                                                │ retrieve, or stable new content
+                                                                                ▼
+          planner: decomposer (add/keep/merge) ─► anti-fragmentation guard ─► context carry-over
+                                                                                │ new / changed sub-queries
+                                                                                ▼
+      speculative cache ─(miss)─► parallel hybrid search per sub-query (asyncio.gather, trigger multi_intent)
+                                                                                │
+                                                                                ▼
+            fusion: dedupe by id ─► near-duplicates ─► rerank per sub-query ─► per-intent quota ─► evidence
 ```
 
 Baseline path (Phase 1):
@@ -84,9 +96,11 @@ utterance ─► hybrid retrieval ─► rerank ─► evidence threshold ─►
 | `src/telemetry/` | JSONL event logger and event types |
 | `src/baseline.py` | non-streaming reference pipeline |
 | `src/stream/` | `simulator.py` (replay), `suppression.py` (presentation-only gate), `stability.py` (probe), `controller.py` (policy + LLM controller option) |
-| `src/engine.py` | streaming engine: controller decisions, background retrieval dispatch, telemetry |
-| `eval/` | dev scenarios, `run_eval.py`, `controller_eval.py`, `ablate_controller.py`. **Never imported by `src/`** (enforced by a test) |
-| `src/decompose/`, `src/session/`, `src/retrieval/cache.py`, `src/synthesis/grounding.py` | placeholders for Phases 3-4 |
+| `src/decompose/` | `decomposer.py` (rule / LLM, diff ops), `dedupe.py` (anti-fragmentation guard), `context.py` (carry-over), `planner.py` |
+| `src/retrieval/fusion.py`, `src/retrieval/cache.py` | cross-sub-query evidence fusion; per-utterance speculative reuse cache |
+| `src/engine.py` | streaming engine: controller decisions, planning, parallel retrieval, fusion, telemetry |
+| `eval/` | dev scenarios, `run_eval.py`, `controller_eval.py`, `ablate_controller.py`, `decompose_eval.py`, `ablate_decompose.py`. **Never imported by `src/`** (enforced by a test) |
+| `src/session/`, `src/synthesis/grounding.py` | placeholders for Phase 4 |
 
 ### Citations and ids
 
@@ -114,6 +128,10 @@ no downloads:
 | `PRISM_STABILITY_THRESHOLD` / `PRISM_STABLE_CHUNKS` / `PRISM_MAX_PROVISIONAL` | 0.2 / 1 / 1 | tuned in step 2.7 |
 | `PRISM_PROBE_K` / `PRISM_PROBE_MIN_CONTENT_TERMS` / `PRISM_PROBE_MIN_TOKENS` | 3 / 2 / 4 | tuned in step 2.7 |
 | `PRISM_GATE_THRESHOLD` | 0.5 | suppression-gate classifier fallback |
+| `PRISM_DECOMPOSER` | `rules` | `llm` (needs an LLM) |
+| `PRISM_ANTI_FRAGMENTATION` / `PRISM_MAX_SUBQUERIES` / `PRISM_SUBQUERY_MERGE_SIMILARITY` / `PRISM_SUBQUERY_MIN_CONTENT_TERMS` | 1 / 4 / 0.85 / 2 | |
+| `PRISM_FUSION_TOP_K` / `PRISM_FUSION_QUOTA` / `PRISM_FUSION_NEAR_DUPLICATE` | 6 / 2 / 0.9 | |
+| `PRISM_CACHE_SIMILARITY` | 0.75 | 0 disables the speculative cache |
 
 ## Teammate setup (infrastructure, not done in Phase 1)
 
@@ -131,8 +149,9 @@ Nothing in this list has been run or verified yet.
    * The HTTP request/response handling has only been tested against a local stub server.
      Run one real request and check that token counts arrive in `logs/telemetry.jsonl`.
    * Set `PRISM_COST_PER_1K_INPUT/OUTPUT` if the endpoint is billed.
-   * Then run the missing Phase 2 ablation arm: `PRISM_LLM_PROVIDER=... make ablate`, which
-     adds the measured `llm` controller row to `reports/PHASE_2_CONTROLLER_ABLATION.md`.
+   * Then fill in the missing ablation arms. `PRISM_LLM_PROVIDER=... make ablate` adds the measured
+     `llm` controller row to `reports/PHASE_2_CONTROLLER_ABLATION.md`. `make ablate3` adds the `llm`
+     decomposer row to `reports/PHASE_3_ABLATION.md`.
 3. **Dense model / reranker (optional).** `make install-optional` installs
    sentence-transformers + faiss-cpu (pulls PyTorch). Verify RAM on the 4 GB target, pin the
    versions in `requirements-optional.txt`, then set `PRISM_DENSE_BACKEND=sentence_transformers`
