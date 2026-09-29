@@ -17,6 +17,11 @@ class BM25Retriever:
         self.chunks = chunks
         self._bm25 = BM25Okapi([tokenize(c.text) for c in chunks], k1=k1, b=b)
 
+    @property
+    def vocabulary(self) -> frozenset[str]:
+        """Normalised terms that occur anywhere in the indexed corpus."""
+        return frozenset(self._bm25.idf)
+
     def search(self, query: str, k: int = 5) -> list[ScoredChunk]:
         terms = tokenize(query)
         if not terms:

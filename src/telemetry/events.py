@@ -6,6 +6,8 @@ from __future__ import annotations
 from src.schemas import TelemetryEvent, TelemetryEventType
 
 REQUEST_STARTED = "request_started"
+CONTROLLER_DECISION = "controller_decision"
+UTTERANCE_END = "utterance_end"
 RETRIEVAL_STARTED = "retrieval_started"
 RETRIEVAL_COMPLETED = "retrieval_completed"
 RERANK_COMPLETED = "rerank_completed"

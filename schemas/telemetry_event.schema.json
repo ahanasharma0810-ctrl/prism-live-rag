@@ -4,6 +4,8 @@
     "event": {
       "enum": [
         "request_started",
+        "controller_decision",
+        "utterance_end",
         "retrieval_started",
         "retrieval_completed",
         "rerank_completed",

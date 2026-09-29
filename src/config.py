@@ -43,6 +43,18 @@ class Settings:
 
     min_evidence_score: float = field(default_factory=lambda: float(_env("PRISM_MIN_EVIDENCE_SCORE", "0.34")))
 
+    # suppression gate (phase 2)
+    gate_threshold: float = field(default_factory=lambda: float(_env("PRISM_GATE_THRESHOLD", "0.5")))
+    # stability probe (phase 2)
+    probe_k: int = field(default_factory=lambda: int(_env("PRISM_PROBE_K", "3")))
+    probe_min_content_terms: int = field(default_factory=lambda: int(_env("PRISM_PROBE_MIN_CONTENT_TERMS", "2")))
+    probe_min_tokens: int = field(default_factory=lambda: int(_env("PRISM_PROBE_MIN_TOKENS", "4")))
+    # retrieval controller (phase 2)
+    controller_mode: str = field(default_factory=lambda: _env("PRISM_CONTROLLER_MODE", "rule_only"))
+    stability_threshold: float = field(default_factory=lambda: float(_env("PRISM_STABILITY_THRESHOLD", "0.2")))
+    stable_chunks: int = field(default_factory=lambda: int(_env("PRISM_STABLE_CHUNKS", "1")))
+    max_provisional: int = field(default_factory=lambda: int(_env("PRISM_MAX_PROVISIONAL", "1")))
+
     llm_provider: str = field(default_factory=lambda: _env("PRISM_LLM_PROVIDER", "none"))
     llm_model: str = field(default_factory=lambda: _env("PRISM_LLM_MODEL", ""))
     llm_base_url: str = field(default_factory=lambda: _env("PRISM_LLM_BASE_URL", "http://localhost:11434"))

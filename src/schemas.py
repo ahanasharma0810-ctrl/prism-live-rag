@@ -35,6 +35,8 @@ class ControllerDecision(_Strict):
     action: Literal["wait", "retrieve", "suppress"]
     reason: str
     trigger: Trigger | None = Field(default=None, description="Set when action == 'retrieve'.")
+    ts: float | None = Field(default=None, ge=0, description="Stream time of the decision (s).")
+    stability_score: float | None = Field(default=None, ge=0, le=1)
 
 
 class SubQuery(_Strict):
@@ -106,6 +108,8 @@ class OutputRecord(_Strict):
 
 TelemetryEventType = Literal[
     "request_started",
+    "controller_decision",
+    "utterance_end",
     "retrieval_started",
     "retrieval_completed",
     "rerank_completed",
