@@ -2,9 +2,12 @@
 
     python eval/run_eval.py --system baseline [--out results/baseline_dev.json] [--verbose]
     python eval/run_eval.py --system controller_only --metrics g2 [--controller-mode rule_only]
+    python eval/run_eval.py --system decompose_fusion --metrics g3
 
 Phase 2 metrics (controller_only): see eval/controller_eval.py (G2 early retrieval rate,
 false-trigger rate, seconds gained vs baseline).
+Phase 3 metrics (decompose_fusion): see eval/decompose_eval.py (G3 multi-intent identification,
+over-split rate, per-intent evidence recall).
 
 Phase 1 metrics (baseline):
 * recall@5            share of gold supporting sections found among the top-5 reranked chunks
@@ -36,6 +39,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from eval.controller_eval import evaluate_controller, print_controller_summary  # noqa: E402
+from eval.decompose_eval import build_engine, evaluate_decomposition, print_decompose_summary  # noqa: E402
 from eval.scenarios import SCENARIO_DIR, Scenario, load_scenarios  # noqa: E402
 from src.baseline import BaselinePipeline  # noqa: E402
 from src.config import get_settings  # noqa: E402
@@ -44,7 +48,7 @@ from src.synthesis.citations import CitationIndex, extract_citations  # noqa: E4
 
 K = 5
 SYSTEMS = {"baseline": 1, "controller_only": 2, "decompose_fusion": 3, "full": 4}
-IMPLEMENTED = {"baseline": {"phase1"}, "controller_only": {"g2"}}
+IMPLEMENTED = {"baseline": {"phase1"}, "controller_only": {"g2"}, "decompose_fusion": {"g3"}}
 
 
 def recall_at_k(retrieved_citations: list[str], gold: list[str]) -> float:
@@ -192,7 +196,16 @@ def main() -> int:
         return 2
 
     scenarios = load_scenarios(args.scenarios)
-    if args.system == "controller_only":
+    if args.system == "decompose_fusion":
+        results = asyncio.run(evaluate_decomposition(scenarios, build_engine()))
+        if args.verbose:
+            for row in results["turns"]:
+                preds = " || ".join(p["text"] for p in row["predicted"])
+                print(f"{row['scenario']:<12} t{row['turn']} gold={row['gold_n']} correct={row['correct']} "
+                      f"pred={len(row['predicted'])}: {preds}")
+        print_decompose_summary(results["summary"])
+        exit_code = 0
+    elif args.system == "controller_only":
         from src.retrieval.factory import build_retrieval
         from src.stream.controller import build_controller
 

@@ -1,7 +1,7 @@
 PYTHON ?= python3
 Q ?= What are the technical evaluation gates and their target thresholds?
 
-.PHONY: help install install-optional test audit index baseline eval replay controller ablate stream schema manifest lock clean
+.PHONY: help install install-optional test audit index baseline eval replay controller ablate decompose ablate3 stream schema manifest lock clean
 
 help:
 	@echo "install           install pinned runtime + dev dependencies"
@@ -13,7 +13,9 @@ help:
 	@echo "eval / replay     run the baseline over eval/dev_scenarios and print metrics"
 	@echo "controller        G2 controller metrics over eval/dev_scenarios (phase 2)"
 	@echo "ablate            controller ablation + threshold grid -> reports/PHASE_2_CONTROLLER_ABLATION.md"
-	@echo "stream            stream U=\"frag 1 | frag 2\" through the controller (phase 2 demo)"
+	@echo "decompose         G3 multi-intent identification + fusion metrics (phase 3)"
+	@echo "ablate3           phase 3 ablations -> reports/PHASE_3_ABLATION.md"
+	@echo "stream            stream U=\"frag 1 | frag 2\" through controller + decomposition (demo)"
 	@echo "schema            regenerate schemas/*.schema.json from src/schemas.py"
 	@echo "manifest          recompute data/corpus/MANIFEST.json hashes"
 
@@ -43,6 +45,12 @@ controller:
 
 ablate:
 	$(PYTHON) eval/ablate_controller.py --out reports/PHASE_2_CONTROLLER_ABLATION.md
+
+decompose:
+	$(PYTHON) eval/run_eval.py --system decompose_fusion --metrics g3
+
+ablate3:
+	$(PYTHON) eval/ablate_decompose.py --out reports/PHASE_3_ABLATION.md
 
 U ?= Which gate covers | early retrieval | and how is it validated?
 stream:

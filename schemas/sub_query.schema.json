@@ -19,6 +19,14 @@
       ],
       "title": "Status",
       "type": "string"
+    },
+    "constraints": {
+      "description": "Shared context carried into this sub-query.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Constraints",
+      "type": "array"
     }
   },
   "required": [

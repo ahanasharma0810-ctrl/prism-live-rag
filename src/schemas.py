@@ -43,6 +43,7 @@ class SubQuery(_Strict):
     id: str
     text: str
     status: Literal["pending", "retrieved", "merged", "dropped"] = "pending"
+    constraints: list[str] = Field(default_factory=list, description="Shared context carried into this sub-query.")
 
 
 # ---------------------------------------------------------------- corpus
@@ -110,9 +111,12 @@ TelemetryEventType = Literal[
     "request_started",
     "controller_decision",
     "utterance_end",
+    "decomposition",
+    "cache_hit",
     "retrieval_started",
     "retrieval_completed",
     "rerank_completed",
+    "fusion_completed",
     "llm_call",
     "citation_check",
     "answer_emitted",

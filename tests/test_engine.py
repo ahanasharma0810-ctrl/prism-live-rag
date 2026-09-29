@@ -68,3 +68,91 @@ async def test_presentation_turn_makes_zero_search_calls(engine):
 async def test_incomplete_utterance_is_suppressed_without_search(engine):
     result = await engine.run_turn(chunks_from_text(["so um", "can you"]))
     assert engine.search_calls == 0 and result.suppressed_reason == "insufficient_content"
+
+
+# ------------------------------------------------------------------ Phase 3: parallel multi-intent retrieval (3.4)
+
+
+async def test_multi_intent_subqueries_are_searched_in_parallel(engine):
+    chunks = chunks_from_text(["How is the reranker scored, and which gate", "measures telemetry coverage?"])
+    result = await engine.run_turn(chunks)
+    multi = [e for e in result.retrieval_events if e.trigger == "multi_intent"]
+    assert len(multi) == 2 and len({e.timestamp_s for e in multi}) == 1
+    assert len(result.sub_queries) == 2 and all(result.sub_results[q.id] for q in result.sub_queries)
+    names = [e.event for e in result.telemetry]
+    starts = [i for i, n in enumerate(names) if n == "retrieval_started"]
+    first_done = names.index("retrieval_completed")
+    assert all(i < first_done for i in starts)  # both dispatched before either completed
+    assert "decomposition" in names
+
+
+async def test_new_intent_after_provisional_searches_only_the_new_subquery(engine):
+    chunks = chunks_from_text(["How does the reranker deduplicate chunks?", "And how is the cache keyed?"])
+    result = await engine.run_turn(chunks)
+    triggers = [(e.trigger, e.timestamp_s) for e in result.retrieval_events]
+    # q1 searched provisionally at 0.0; at 0.8 only the new q2 is searched (q1 unchanged, not re-searched)
+    assert triggers == [("provisional", 0.0), ("multi_intent", 0.8)]
+    assert [q.id for q in result.sub_queries] == ["q1", "q2"]
+
+
+async def test_single_intent_is_not_split(engine):
+    result = await engine.run_turn(chunks_from_text(["Which gate covers", "early retrieval", "and how is it validated?"]))
+    assert len(result.sub_queries) == 1
+    assert [e.trigger for e in result.retrieval_events] == ["provisional"]
+
+
+async def test_decompose_off_keeps_phase2_behaviour(stack, tmp_path):
+    eng = StreamingEngine(Settings(log_dir=tmp_path), stack=stack, telemetry=TelemetryLogger(None), decompose=False)
+    result = await eng.run_turn(chunks_from_text(["How is the reranker scored, and which gate", "measures telemetry?"]))
+    assert all(e.trigger != "multi_intent" for e in result.retrieval_events) and result.sub_queries == []
+
+
+async def test_fused_evidence_covers_every_sub_intent(engine):
+    chunks = chunks_from_text(["How is the reranker scored, and which gate", "measures telemetry coverage?"])
+    result = await engine.run_turn(chunks)
+    assert result.evidence and len(result.evidence) <= engine.settings.fusion_top_k
+    covered = {s for sources in result.evidence_sources.values() for s in sources}
+    assert covered == {q.id for q in result.sub_queries}
+    assert "fusion_completed" in [e.event for e in result.telemetry]
+
+
+async def test_no_decompose_evidence_is_last_retrieval(stack, tmp_path):
+    eng = StreamingEngine(Settings(log_dir=tmp_path), stack=stack, telemetry=TelemetryLogger(None), decompose=False)
+    result = await eng.run_turn(chunks_from_text(["describe the telemetry trace coverage gate"]))
+    assert result.evidence == result.final_results and result.evidence
+
+
+async def test_final_subquery_close_to_provisional_reuses_cached_search(engine):
+    chunks = chunks_from_text(["Describe the telemetry trace coverage gate", "in detail"])
+    result = await engine.run_turn(chunks)
+    names = [e.event for e in result.telemetry]
+    assert [e.trigger for e in result.retrieval_events] == ["provisional"]  # no second search
+    assert "cache_hit" in names
+    hit = next(e for e in result.telemetry if e.event == "cache_hit")
+    assert hit.data["similarity"] >= engine.settings.cache_similarity
+    assert result.sub_results[result.sub_queries[0].id] == result.retrievals[0].results
+
+
+async def test_cache_disabled_searches_again(stack, tmp_path):
+    eng = StreamingEngine(Settings(log_dir=tmp_path, cache_similarity=0.0), stack=stack, telemetry=TelemetryLogger(None))
+    result = await eng.run_turn(chunks_from_text(["Describe the telemetry trace coverage gate", "in detail"]))
+    assert len(result.retrieval_events) == 2
+
+
+async def test_late_finishing_stale_search_does_not_overwrite_newer_results(stack, tmp_path):
+    """A provisional search that completes after the sub-query's newer search must be ignored."""
+    eng = StreamingEngine(Settings(log_dir=tmp_path, cache_similarity=0.0), stack=stack,
+                          telemetry=TelemetryLogger(None))
+    original = eng._search
+
+    def slow_first(query, _calls=[0]):
+        _calls[0] += 1
+        if _calls[0] == 1:
+            import time as _t
+            _t.sleep(0.2)  # the first (provisional) search finishes last
+        return original(query)
+
+    eng._search = slow_first
+    result = await eng.run_turn(chunks_from_text(["Describe the telemetry trace coverage gate", "and token cost"]))
+    last_q1 = [r for r in result.retrievals if r.subquery_id == result.sub_queries[0].id][-1]
+    assert result.sub_results[result.sub_queries[0].id] == last_q1.results
