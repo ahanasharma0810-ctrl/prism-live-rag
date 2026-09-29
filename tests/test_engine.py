@@ -120,3 +120,20 @@ async def test_no_decompose_evidence_is_last_retrieval(stack, tmp_path):
     eng = StreamingEngine(Settings(log_dir=tmp_path), stack=stack, telemetry=TelemetryLogger(None), decompose=False)
     result = await eng.run_turn(chunks_from_text(["describe the telemetry trace coverage gate"]))
     assert result.evidence == result.final_results and result.evidence
+
+
+async def test_final_subquery_close_to_provisional_reuses_cached_search(engine):
+    chunks = chunks_from_text(["Describe the telemetry trace coverage gate", "in detail"])
+    result = await engine.run_turn(chunks)
+    names = [e.event for e in result.telemetry]
+    assert [e.trigger for e in result.retrieval_events] == ["provisional"]  # no second search
+    assert "cache_hit" in names
+    hit = next(e for e in result.telemetry if e.event == "cache_hit")
+    assert hit.data["similarity"] >= engine.settings.cache_similarity
+    assert result.sub_results[result.sub_queries[0].id] == result.retrievals[0].results
+
+
+async def test_cache_disabled_searches_again(stack, tmp_path):
+    eng = StreamingEngine(Settings(log_dir=tmp_path, cache_similarity=0.0), stack=stack, telemetry=TelemetryLogger(None))
+    result = await eng.run_turn(chunks_from_text(["Describe the telemetry trace coverage gate", "in detail"]))
+    assert len(result.retrieval_events) == 2

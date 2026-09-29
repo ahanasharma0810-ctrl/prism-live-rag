@@ -10,7 +10,10 @@ suppress. With decomposition enabled (default):
   `retrieval_started` event each, trigger `multi_intent` when more than one sub-query is
   live (otherwise the controller's `provisional` / `final` trigger). A single live
   sub-query is never re-searched mid-stream, so the provisional limit still holds;
-* searches run as background tasks so the stream keeps flowing.
+* searches run as background tasks so the stream keeps flowing;
+* a sub-query whose query is close to one already searched in this utterance reuses that
+  search (speculative reuse cache, logged as `cache_hit`);
+* at the end, per-sub-query results are fused into one evidence set with a per-intent quota.
 
 With `decompose=False` the Phase 2 behaviour is unchanged: one search of the whole
 transcript per `retrieve` decision. Session refinement and answer synthesis are Phase 4.
@@ -30,6 +33,7 @@ from dataclasses import dataclass, field
 from src.config import Settings, get_settings
 from src.decompose.context import search_text
 from src.decompose.planner import QueryPlanner, build_planner
+from src.retrieval.cache import SpeculativeCache
 from src.retrieval.factory import RetrievalStack, build_retrieval
 from src.retrieval.fusion import fuse_evidence
 from src.retrieval.rerank import Reranker, make_reranker
@@ -108,6 +112,8 @@ class _TurnState:
     searched: dict[str, str] = field(default_factory=dict)  # sub-query id -> query last searched
     sub_results: dict[str, list[ScoredChunk]] = field(default_factory=dict)
     planned_transcript: str | None = None
+    cache: SpeculativeCache | None = None
+    aliases: dict[str, RetrievalRun] = field(default_factory=dict)  # sub-query id -> reused run (3.6)
 
 
 class StreamingEngine:
@@ -158,6 +164,8 @@ class StreamingEngine:
             run = RetrievalRun(RetrievalEvent(timestamp_s=ts, query=query, trigger=trigger), subquery_id=sub_id)
             st.runs.append(run)
             runs.append(run)
+            if st.cache is not None:
+                st.cache.put(query, run)
             st.trace.emit(ev.RETRIEVAL_STARTED, trigger=trigger, stream_ts=ts, query=query, subquery_id=sub_id)
         st.tasks.append(asyncio.create_task(self._gather(runs, st)))
 
@@ -192,6 +200,13 @@ class StreamingEngine:
             query = to_search_query(search_text(q))
             if query and st.searched.get(q.id) != query:
                 st.searched[q.id] = query
+                hit = st.cache.lookup(query) if st.cache is not None else None
+                if hit is not None:
+                    st.aliases[q.id] = hit.entry
+                    st.trace.emit(ev.CACHE_HIT, stream_ts=ts, subquery_id=q.id, query=query,
+                                  matched_query=hit.matched_query, similarity=round(hit.similarity, 4))
+                    continue
+                st.aliases.pop(q.id, None)
                 targets.append((q.id, query))
         if targets:
             self._dispatch(targets, ts, "multi_intent" if multi else trigger or "provisional", st)
@@ -214,6 +229,8 @@ class StreamingEngine:
         if self.planner is not None:
             self.planner.reset()
         st = _TurnState(trace)
+        if self.decompose and self.settings.cache_similarity > 0:
+            st.cache = SpeculativeCache(self.settings.cache_similarity)  # per utterance, discarded after
         decisions: list[ControllerDecision] = []
         transcript, end_ts = "", 0.0
 
@@ -243,6 +260,8 @@ class StreamingEngine:
 
         if st.tasks:
             await asyncio.gather(*st.tasks)
+        for sub_id, run in st.aliases.items():
+            st.sub_results[sub_id] = run.results
         for q in st.live:
             if q.id in st.sub_results:
                 q.status = "retrieved"
@@ -264,7 +283,8 @@ class StreamingEngine:
             result.evidence = result.final_results
         trace.emit(ev.REQUEST_COMPLETED, stage_latency_ms=trace.elapsed_ms(), retrievals=len(st.runs),
                    sub_queries=len(st.live), first_retrieval_s=result.first_retrieval_s, utterance_end_s=end_ts,
-                   retrieved_early=result.retrieved_early, suppressed_reason=suppressed)
+                   retrieved_early=result.retrieved_early, suppressed_reason=suppressed,
+                   cache_hits=st.cache.hits if st.cache is not None else 0)
         result.telemetry = list(trace.events)
         return result
 

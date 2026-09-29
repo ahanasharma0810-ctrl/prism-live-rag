@@ -63,6 +63,7 @@ class Settings:
     fusion_top_k: int = field(default_factory=lambda: int(_env("PRISM_FUSION_TOP_K", "6")))
     fusion_quota: int = field(default_factory=lambda: int(_env("PRISM_FUSION_QUOTA", "2")))
     fusion_near_duplicate: float = field(default_factory=lambda: float(_env("PRISM_FUSION_NEAR_DUPLICATE", "0.9")))
+    cache_similarity: float = field(default_factory=lambda: float(_env("PRISM_CACHE_SIMILARITY", "0.75")))
     anti_fragmentation: bool = field(default_factory=lambda: _env("PRISM_ANTI_FRAGMENTATION", "1") not in ("0", "false", "no"))
 
     llm_provider: str = field(default_factory=lambda: _env("PRISM_LLM_PROVIDER", "none"))
