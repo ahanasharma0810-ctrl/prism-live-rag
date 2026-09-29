@@ -1,0 +1,32 @@
+# CONFIGURATION ONLY - not run during Phase 1 (Docker unavailable in the build environment).
+#
+#   docker compose up                      # build indexes + answer SAMPLE_QUERY (no LLM needed)
+#   docker compose --profile llm up        # also start an Ollama server (see README, "Teammate setup")
+#
+services:
+  prism:
+    build: .
+    environment:
+      PRISM_LLM_PROVIDER: ${PRISM_LLM_PROVIDER:-none}
+      PRISM_LLM_MODEL: ${PRISM_LLM_MODEL:-}
+      PRISM_LLM_BASE_URL: ${PRISM_LLM_BASE_URL:-http://ollama:11434}
+      PRISM_LLM_API_KEY: ${PRISM_LLM_API_KEY:-}
+      PRISM_DENSE_BACKEND: ${PRISM_DENSE_BACKEND:-hashing}
+      PRISM_RERANK_BACKEND: ${PRISM_RERANK_BACKEND:-lexical}
+      SAMPLE_QUERY: ${SAMPLE_QUERY:-What are the technical evaluation gates and their target thresholds?}
+    volumes:
+      - ./logs:/app/logs
+    mem_limit: 3g
+
+  # Optional local LLM server. Only started with `--profile llm`.
+  # The image tag and model choice must be decided and pinned by the infrastructure owner.
+  ollama:
+    image: ollama/ollama
+    profiles: ["llm"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+
+volumes:
+  ollama_models:
