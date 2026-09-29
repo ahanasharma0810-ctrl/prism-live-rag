@@ -57,6 +57,10 @@ class Settings:
 
     # decomposition and fusion (phase 3)
     decomposer: str = field(default_factory=lambda: _env("PRISM_DECOMPOSER", "rules"))
+    max_subqueries: int = field(default_factory=lambda: int(_env("PRISM_MAX_SUBQUERIES", "4")))
+    subquery_merge_similarity: float = field(default_factory=lambda: float(_env("PRISM_SUBQUERY_MERGE_SIMILARITY", "0.85")))
+    subquery_min_content_terms: int = field(default_factory=lambda: int(_env("PRISM_SUBQUERY_MIN_CONTENT_TERMS", "2")))
+    anti_fragmentation: bool = field(default_factory=lambda: _env("PRISM_ANTI_FRAGMENTATION", "1") not in ("0", "false", "no"))
 
     llm_provider: str = field(default_factory=lambda: _env("PRISM_LLM_PROVIDER", "none"))
     llm_model: str = field(default_factory=lambda: _env("PRISM_LLM_MODEL", ""))
