@@ -68,3 +68,40 @@ async def test_presentation_turn_makes_zero_search_calls(engine):
 async def test_incomplete_utterance_is_suppressed_without_search(engine):
     result = await engine.run_turn(chunks_from_text(["so um", "can you"]))
     assert engine.search_calls == 0 and result.suppressed_reason == "insufficient_content"
+
+
+# ------------------------------------------------------------------ Phase 3: parallel multi-intent retrieval (3.4)
+
+
+async def test_multi_intent_subqueries_are_searched_in_parallel(engine):
+    chunks = chunks_from_text(["How is the reranker scored, and which gate", "measures telemetry coverage?"])
+    result = await engine.run_turn(chunks)
+    multi = [e for e in result.retrieval_events if e.trigger == "multi_intent"]
+    assert len(multi) == 2 and len({e.timestamp_s for e in multi}) == 1
+    assert len(result.sub_queries) == 2 and all(result.sub_results[q.id] for q in result.sub_queries)
+    names = [e.event for e in result.telemetry]
+    starts = [i for i, n in enumerate(names) if n == "retrieval_started"]
+    first_done = names.index("retrieval_completed")
+    assert all(i < first_done for i in starts)  # both dispatched before either completed
+    assert "decomposition" in names
+
+
+async def test_new_intent_after_provisional_searches_only_the_new_subquery(engine):
+    chunks = chunks_from_text(["How does the reranker deduplicate chunks?", "And how is the cache keyed?"])
+    result = await engine.run_turn(chunks)
+    triggers = [(e.trigger, e.timestamp_s) for e in result.retrieval_events]
+    # q1 searched provisionally at 0.0; at 0.8 only the new q2 is searched (q1 unchanged, not re-searched)
+    assert triggers == [("provisional", 0.0), ("multi_intent", 0.8)]
+    assert [q.id for q in result.sub_queries] == ["q1", "q2"]
+
+
+async def test_single_intent_is_not_split(engine):
+    result = await engine.run_turn(chunks_from_text(["Which gate covers", "early retrieval", "and how is it validated?"]))
+    assert len(result.sub_queries) == 1
+    assert [e.trigger for e in result.retrieval_events] == ["provisional"]
+
+
+async def test_decompose_off_keeps_phase2_behaviour(stack, tmp_path):
+    eng = StreamingEngine(Settings(log_dir=tmp_path), stack=stack, telemetry=TelemetryLogger(None), decompose=False)
+    result = await eng.run_turn(chunks_from_text(["How is the reranker scored, and which gate", "measures telemetry?"]))
+    assert all(e.trigger != "multi_intent" for e in result.retrieval_events) and result.sub_queries == []

@@ -40,11 +40,14 @@ async def evaluate_controller(
     stack: RetrievalStack | None = None,
     controller: RetrievalController | None = None,
     telemetry: TelemetryLogger | None = None,
+    engine: StreamingEngine | None = None,
 ) -> dict:
+    """Controller-only by default (no decomposition), so G2 measures the controller alone.
+    Pass a decomposing `engine` to measure G2 for the full Phase 3 pipeline."""
     s = settings or get_settings()
     stack = stack or build_retrieval(s)
     controller = controller or build_controller(stack, s)
-    engine = StreamingEngine(s, stack=stack, controller=controller, telemetry=telemetry)
+    engine = engine or StreamingEngine(s, stack=stack, controller=controller, telemetry=telemetry, decompose=False)
 
     rows = []
     for scenario in scenarios:
@@ -78,7 +81,7 @@ async def evaluate_controller(
             evidence = " ".join(h.chunk.text for h in result.final_results)
             prior = f"{result.utterance} {evidence}".strip()
 
-    return {"summary": summarize(rows, controller.name), "turns": rows}
+    return {"summary": summarize(rows, engine.controller.name), "turns": rows}
 
 
 def _mean(values):
