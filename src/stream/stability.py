@@ -10,7 +10,7 @@ Content sufficiency: at least `min_tokens` non-filler tokens and at least
 `min_content_terms` slots/entities, where a slot is a content term that exists in the corpus
 vocabulary and an entity is a number or a capitalised word inside the sentence.
 `incomplete` flags fragments that visibly continue (trailing ellipsis/comma, or ending on a
-function word such as "in", "and", "the"). All word lists are generic English.
+function word such as "in", "and", "the", unless the fragment ends with . ? or !). All word lists are generic English.
 
 Cost: one BM25 scoring pass over the corpus per chunk (well under 1 ms on this corpus).
 """
@@ -43,6 +43,8 @@ def is_incomplete(text: str) -> bool:
         return True
     if stripped.endswith(("…", "...", ",", ";", ":", "-", "—")):
         return True
+    if stripped.endswith((".", "?", "!")):
+        return False  # sentence-final punctuation closes the fragment
     words = _WORD_RE.findall(stripped)
     return not words or words[-1].lower() in DANGLING
 

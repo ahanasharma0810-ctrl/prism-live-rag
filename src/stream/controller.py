@@ -4,7 +4,9 @@ Policy (mode `rule_stability`, the default):
 * suppress  - the suppression gate classifies the turn as presentation-only
               (reason `presentation_restructure`), or at utterance end the transcript has no
               searchable content, or trails off unfinished below the content minimums
-              (reason `insufficient_content`; the caller should ask for clarification).
+              (reason `insufficient_content`; the caller should ask for clarification), or
+              is complete but contains no corpus term at all (reason `no_corpus_terms`; the
+              caller should report that the corpus has no evidence).
 * wait      - the fragment is incomplete, lacks content, or its stability score is below
               `stability_threshold`.
 * retrieve  - trigger `provisional` once stability holds for `stable_chunks` consecutive
@@ -120,7 +122,11 @@ class RetrievalController:
         slots, ents, n_tokens = self.probe.content(transcript)
         n_content = len(slots) + len(ents)
         thin = n_content < self.probe.min_content_terms or n_tokens < self.probe.min_tokens
-        if n_content == 0 or (is_incomplete(transcript) and thin):
+        incomplete = is_incomplete(transcript)
+        if n_content == 0 and not incomplete and n_tokens >= self.probe.min_tokens:
+            # a complete request, but none of its words occur in the corpus: nothing to search
+            return self._decision("suppress", "no_corpus_terms", ts)
+        if n_content == 0 or (incomplete and thin):
             return self._decision("suppress", "insufficient_content", ts)
         if self.retrieved_terms is None:
             return self._retrieve(transcript, ts, "final", "utterance_end")

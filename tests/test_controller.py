@@ -80,6 +80,12 @@ async def test_insufficient_content_at_end_is_suppressed(stack):
     assert decisions[-1].action == "suppress" and decisions[-1].reason == "insufficient_content"
 
 
+async def test_complete_request_without_corpus_terms_is_flagged(stack):
+    decisions = await run(ctrl(stack), ["When does the ferry leave", "for the island tomorrow?"])
+    assert all(d.action != "retrieve" for d in decisions)
+    assert decisions[-1].action == "suppress" and decisions[-1].reason == "no_corpus_terms"
+
+
 async def test_presentation_turn_never_retrieves(stack):
     decisions = await run(ctrl(stack), ["Could you rewrite that", "as bullet points?"], prior="Earlier answer text.")
     assert all(d.action != "retrieve" for d in decisions)

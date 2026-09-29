@@ -22,6 +22,8 @@ def bm25():
         ("which gate measures latency,", True),
         ("", True),
         ("which gate measures latency?", False),
+        ("and what the threshold is.", False),
+        ("do you know what it is!", False),
         ("describe the telemetry schema", False),
     ],
 )
