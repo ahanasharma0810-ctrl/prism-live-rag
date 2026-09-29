@@ -105,3 +105,18 @@ async def test_decompose_off_keeps_phase2_behaviour(stack, tmp_path):
     eng = StreamingEngine(Settings(log_dir=tmp_path), stack=stack, telemetry=TelemetryLogger(None), decompose=False)
     result = await eng.run_turn(chunks_from_text(["How is the reranker scored, and which gate", "measures telemetry?"]))
     assert all(e.trigger != "multi_intent" for e in result.retrieval_events) and result.sub_queries == []
+
+
+async def test_fused_evidence_covers_every_sub_intent(engine):
+    chunks = chunks_from_text(["How is the reranker scored, and which gate", "measures telemetry coverage?"])
+    result = await engine.run_turn(chunks)
+    assert result.evidence and len(result.evidence) <= engine.settings.fusion_top_k
+    covered = {s for sources in result.evidence_sources.values() for s in sources}
+    assert covered == {q.id for q in result.sub_queries}
+    assert "fusion_completed" in [e.event for e in result.telemetry]
+
+
+async def test_no_decompose_evidence_is_last_retrieval(stack, tmp_path):
+    eng = StreamingEngine(Settings(log_dir=tmp_path), stack=stack, telemetry=TelemetryLogger(None), decompose=False)
+    result = await eng.run_turn(chunks_from_text(["describe the telemetry trace coverage gate"]))
+    assert result.evidence == result.final_results and result.evidence

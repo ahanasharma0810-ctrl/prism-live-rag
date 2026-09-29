@@ -31,6 +31,7 @@ from src.config import Settings, get_settings
 from src.decompose.context import search_text
 from src.decompose.planner import QueryPlanner, build_planner
 from src.retrieval.factory import RetrievalStack, build_retrieval
+from src.retrieval.fusion import fuse_evidence
 from src.retrieval.rerank import Reranker, make_reranker
 from src.retrieval.text import STOPWORDS
 from src.schemas import (
@@ -77,6 +78,8 @@ class StreamTurnResult:
     telemetry: list[TelemetryEvent]
     sub_queries: list[SubQuery] = field(default_factory=list)
     sub_results: dict[str, list[ScoredChunk]] = field(default_factory=dict)
+    evidence: list[ScoredChunk] = field(default_factory=list)  # fused across sub-queries (3.5)
+    evidence_sources: dict[str, list[str]] = field(default_factory=dict)  # chunk id -> sub-query ids
 
     @property
     def retrieval_events(self) -> list[RetrievalEvent]:
@@ -245,8 +248,20 @@ class StreamingEngine:
                 q.status = "retrieved"
         last = decisions[-1] if decisions else None
         suppressed = last.reason if last is not None and last.action == "suppress" else None
-        result = StreamTurnResult(transcript, end_ts, decisions, st.runs, suppressed, [], list(st.live),
-                                  {q.id: st.sub_results.get(q.id, []) for q in st.live})
+        sub_results = {q.id: st.sub_results[q.id] for q in st.live if q.id in st.sub_results}
+        result = StreamTurnResult(transcript, end_ts, decisions, st.runs, suppressed, [], list(st.live), sub_results)
+        if sub_results:
+            t = time.perf_counter()
+            fused = fuse_evidence(sub_results, {q.id: search_text(q) for q in st.live}, self.reranker,
+                                  top_k=self.settings.fusion_top_k, quota=self.settings.fusion_quota,
+                                  near_duplicate=self.settings.fusion_near_duplicate)
+            result.evidence, result.evidence_sources = fused.evidence, fused.sources
+            trace.emit(ev.FUSION_COMPLETED, stage_latency_ms=(time.perf_counter() - t) * 1000,
+                       chunk_ids=[h.chunk.chunk_id for h in fused.evidence], sources=fused.sources,
+                       dropped_duplicates=fused.dropped_duplicates,
+                       dropped_near_duplicates=fused.dropped_near_duplicates)
+        elif st.runs:
+            result.evidence = result.final_results
         trace.emit(ev.REQUEST_COMPLETED, stage_latency_ms=trace.elapsed_ms(), retrievals=len(st.runs),
                    sub_queries=len(st.live), first_retrieval_s=result.first_retrieval_s, utterance_end_s=end_ts,
                    retrieved_early=result.retrieved_early, suppressed_reason=suppressed)
@@ -273,6 +288,8 @@ def main() -> int:
         "retrieval_events": [e.model_dump() for e in result.retrieval_events],
         "sub_queries": [q.model_dump() for q in result.sub_queries],
         "sub_results": {k: [h.chunk.chunk_id for h in v] for k, v in result.sub_results.items()},
+        "evidence": [{"chunk_id": h.chunk.chunk_id, "score": round(h.score, 4),
+                      "sub_queries": result.evidence_sources.get(h.chunk.chunk_id, [])} for h in result.evidence],
         "utterance_end_s": result.utterance_end_s,
         "retrieved_early": result.retrieved_early,
         "suppressed_reason": result.suppressed_reason,
