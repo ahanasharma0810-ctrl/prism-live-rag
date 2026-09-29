@@ -34,7 +34,7 @@ async def test_incomplete_fragment_waits(stack):
 
 
 async def test_rule_stability_retrieves_provisionally_once_stable(stack):
-    decisions = await run(ctrl(stack, stability_threshold=0.3),
+    decisions = await run(ctrl(stack, mode="rule_stability", stability_threshold=0.3),
                           ["Explain citation hallucination and fabricated ids", "in the grounding gates"])
     assert decisions[0].action == "wait" and decisions[0].reason == "low_stability"  # first probe scores 0
     assert decisions[1].action == "retrieve" and decisions[1].trigger == "provisional"
@@ -92,3 +92,46 @@ def test_invalid_config_is_rejected(stack):
         RetrievalController(ControllerConfig(mode="bogus"), c.probe, c.gate)
     with pytest.raises(ValueError):
         RetrievalController(ControllerConfig(stable_chunks=0), c.probe, c.gate)
+
+
+def test_tuned_defaults():
+    s = Settings()
+    assert (s.controller_mode, s.stability_threshold, s.stable_chunks, s.probe_min_content_terms,
+            s.probe_min_tokens) == ("rule_only", 0.2, 1, 2, 4)
+
+
+# ------------------------------------------------------------------ LLM controller (2.7)
+
+import json  # noqa: E402
+
+from src.llm.client import LLMError, MockLLMClient  # noqa: E402
+from src.stream.controller import LLMController  # noqa: E402
+
+
+async def test_llm_controller_maps_replies_to_decisions():
+    replies = [json.dumps({"action": a, "reason": "r"}) for a in ("wait", "retrieve", "retrieve", "retrieve")]
+    c = LLMController(MockLLMClient(replies), max_provisional=1)
+    c.start_utterance(None)
+    d1 = await c.on_chunk("tell me about", 0.0)
+    d2 = await c.on_chunk("tell me about the gates", 0.8)
+    d3 = await c.on_chunk("tell me about the gates please", 1.6)
+    end = await c.on_utterance_end("tell me about the gates please now", 2.1)
+    assert (d1.action, d2.trigger, d3.reason, end.trigger) == ("wait", "provisional", "provisional_limit", "final")
+    assert c.calls == 4
+    assert "Utterance finished: no" in c.client.prompts[0] and "Utterance finished: yes" in c.client.prompts[3]
+
+
+async def test_llm_controller_falls_back_on_errors():
+    def boom(prompt):
+        raise LLMError("down")
+
+    c = LLMController(MockLLMClient(boom))
+    c.start_utterance("prior")
+    assert (await c.on_chunk("x y z", 0.0)).reason == "llm_error"
+    end = await c.on_utterance_end("x y z", 0.5)
+    assert end.action == "retrieve" and end.trigger == "final"
+
+
+def test_llm_mode_requires_configured_llm(stack):
+    with pytest.raises(ValueError):
+        build_controller(stack, Settings(llm_provider="none"), mode="llm")

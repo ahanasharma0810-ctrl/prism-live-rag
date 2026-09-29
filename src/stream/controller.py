@@ -22,7 +22,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
+from pydantic import BaseModel
+
 from src.config import Settings, get_settings
+from src.llm.client import LLMClient, LLMError, make_llm_client
 from src.schemas import ControllerDecision, Trigger
 from src.stream.stability import ProbeResult, StabilityProbe, is_incomplete
 from src.stream.suppression import PresentationGate
@@ -127,9 +130,16 @@ class RetrievalController:
         return self._decision("wait", "no_new_content", ts)
 
 
-def build_controller(stack, settings: Settings | None = None, mode: Mode | None = None, **overrides) -> RetrievalController:
-    """Controller wired to the corpus BM25 index, configured from settings."""
+def build_controller(stack, settings: Settings | None = None, mode: str | None = None, **overrides):
+    """Controller wired to the corpus BM25 index, configured from settings.
+
+    mode: rule_stability | rule_only | llm (the last needs PRISM_LLM_PROVIDER configured)."""
     s = settings or get_settings()
+    if (mode or s.controller_mode) == "llm":
+        client = make_llm_client(s)
+        if client is None:
+            raise ValueError("controller mode 'llm' needs an LLM (set PRISM_LLM_PROVIDER / PRISM_LLM_MODEL)")
+        return LLMController(client, max_provisional=s.max_provisional)
     cfg = ControllerConfig.from_settings(s)
     if mode is not None:
         overrides["mode"] = mode
@@ -139,3 +149,82 @@ def build_controller(stack, settings: Settings | None = None, mode: Mode | None 
                            min_tokens=s.probe_min_tokens)
     gate = PresentationGate(stack.bm25.vocabulary, threshold=s.gate_threshold)
     return RetrievalController(cfg, probe, gate)
+
+
+# ---------------------------------------------------------------------- LLM controller (ablation)
+
+class LLMControllerDecision(BaseModel):
+    action: Literal["wait", "retrieve", "suppress"]
+    reason: str = ""
+
+
+LLM_CONTROLLER_SYSTEM = (
+    "You control retrieval for a live voice assistant that answers from a document corpus. "
+    "Given the user's transcript so far, choose one action: 'wait' if the request is still "
+    "incomplete or unclear; 'retrieve' if the information need is clear enough to search now; "
+    "'suppress' if the user only asks to reformat, shorten, repeat or translate the previous "
+    "answer, or if there is nothing to search. Reply with JSON only."
+)
+
+
+def llm_controller_prompt(transcript: str, finished: bool, has_prior_output: bool) -> str:
+    return (
+        f"Transcript so far: {transcript!r}\n"
+        f"Utterance finished: {'yes' if finished else 'no'}\n"
+        f"A previous assistant answer exists in this session: {'yes' if has_prior_output else 'no'}\n"
+        'Return JSON: {"action": "wait" | "retrieve" | "suppress", "reason": "<few words>"}'
+    )
+
+
+class LLMController:
+    """Model-based controller for the 2.7 ablation: one LLM call per chunk (via src/llm/client.py).
+
+    It keeps the same bookkeeping as the rule controller (at most `max_provisional`
+    provisional retrievals; a final retrieval only if the transcript grew since the last
+    one). On an LLM error it waits during the stream and retrieves at the utterance end.
+    """
+
+    name = "llm"
+
+    def __init__(self, client: LLMClient, max_provisional: int = 1):
+        self.client = client
+        self.max_provisional = max_provisional
+        self.calls = 0
+        self.start_utterance(None)
+
+    def start_utterance(self, prior_output: str | None) -> None:
+        self.prior_output = prior_output
+        self.provisional_count = 0
+        self.retrieved_transcript: str | None = None
+
+    async def _ask(self, transcript: str, finished: bool) -> LLMControllerDecision | None:
+        self.calls += 1
+        prompt = llm_controller_prompt(transcript, finished, bool(self.prior_output))
+        try:
+            resp = await self.client.generate(prompt, schema=LLMControllerDecision, system=LLM_CONTROLLER_SYSTEM)
+        except LLMError:
+            return None
+        return resp.parsed
+
+    async def on_chunk(self, transcript: str, ts: float) -> ControllerDecision:
+        d = await self._ask(transcript, finished=False)
+        if d is None:
+            return ControllerDecision(action="wait", reason="llm_error", ts=ts)
+        if d.action == "retrieve":
+            if self.provisional_count >= self.max_provisional:
+                return ControllerDecision(action="wait", reason="provisional_limit", ts=ts)
+            self.provisional_count += 1
+            self.retrieved_transcript = transcript
+            return ControllerDecision(action="retrieve", reason=f"llm:{d.reason}"[:200], trigger="provisional", ts=ts)
+        return ControllerDecision(action=d.action, reason=f"llm:{d.reason}"[:200], ts=ts)
+
+    async def on_utterance_end(self, transcript: str, ts: float) -> ControllerDecision:
+        d = await self._ask(transcript, finished=True)
+        action = "retrieve" if d is None else d.action
+        reason = "llm_error" if d is None else f"llm:{d.reason}"[:200]
+        if action != "retrieve":
+            return ControllerDecision(action=action if action == "suppress" else "wait", reason=reason, ts=ts)
+        if self.retrieved_transcript is not None and len(transcript.split()) <= len(self.retrieved_transcript.split()):
+            return ControllerDecision(action="wait", reason="no_new_content", ts=ts)
+        self.retrieved_transcript = transcript
+        return ControllerDecision(action="retrieve", reason=reason, trigger="final", ts=ts)

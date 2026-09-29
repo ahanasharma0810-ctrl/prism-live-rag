@@ -1,7 +1,7 @@
 PYTHON ?= python3
 Q ?= What are the technical evaluation gates and their target thresholds?
 
-.PHONY: help install install-optional test audit index baseline eval replay schema manifest lock clean
+.PHONY: help install install-optional test audit index baseline eval replay controller ablate stream schema manifest lock clean
 
 help:
 	@echo "install           install pinned runtime + dev dependencies"
@@ -11,6 +11,9 @@ help:
 	@echo "index             build BM25 + dense indexes and write indexes/chunks.jsonl"
 	@echo "baseline          answer Q=\"...\" with the non-streaming baseline"
 	@echo "eval / replay     run the baseline over eval/dev_scenarios and print metrics"
+	@echo "controller        G2 controller metrics over eval/dev_scenarios (phase 2)"
+	@echo "ablate            controller ablation + threshold grid -> reports/PHASE_2_CONTROLLER_ABLATION.md"
+	@echo "stream            stream U=\"frag 1 | frag 2\" through the controller (phase 2 demo)"
 	@echo "schema            regenerate schemas/*.schema.json from src/schemas.py"
 	@echo "manifest          recompute data/corpus/MANIFEST.json hashes"
 
@@ -34,6 +37,16 @@ baseline:
 
 eval:
 	$(PYTHON) eval/run_eval.py --system baseline
+
+controller:
+	$(PYTHON) eval/run_eval.py --system controller_only --metrics g2
+
+ablate:
+	$(PYTHON) eval/ablate_controller.py --out reports/PHASE_2_CONTROLLER_ABLATION.md
+
+U ?= Which gate covers | early retrieval | and how is it validated?
+stream:
+	$(PYTHON) -m src.engine --utterance "$(U)"
 
 # Phase 1: the replay suite is the baseline over the dev scenarios.
 # Phase 5 replaces this with the full streaming replay runner.
