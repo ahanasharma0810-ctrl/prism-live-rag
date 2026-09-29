@@ -45,6 +45,10 @@ class Settings:
 
     # suppression gate (phase 2)
     gate_threshold: float = field(default_factory=lambda: float(_env("PRISM_GATE_THRESHOLD", "0.5")))
+    # stability probe (phase 2)
+    probe_k: int = field(default_factory=lambda: int(_env("PRISM_PROBE_K", "3")))
+    probe_min_content_terms: int = field(default_factory=lambda: int(_env("PRISM_PROBE_MIN_CONTENT_TERMS", "2")))
+    probe_min_tokens: int = field(default_factory=lambda: int(_env("PRISM_PROBE_MIN_TOKENS", "3")))
 
     llm_provider: str = field(default_factory=lambda: _env("PRISM_LLM_PROVIDER", "none"))
     llm_model: str = field(default_factory=lambda: _env("PRISM_LLM_MODEL", ""))
