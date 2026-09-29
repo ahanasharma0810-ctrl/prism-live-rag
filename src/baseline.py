@@ -32,6 +32,7 @@ from src.telemetry.logger import TelemetryLogger
 class BaselineResult:
     record: OutputRecord
     retrieved: list[ScoredChunk]
+    reranked: list[ScoredChunk]
     evidence: list[ScoredChunk]
     claims: list[Claim]
     invalid_citations: list[str]
@@ -129,6 +130,7 @@ class BaselinePipeline:
         return BaselineResult(
             record=record,
             retrieved=retrieved,
+            reranked=top,
             evidence=evidence,
             claims=claims,
             invalid_citations=invalid,

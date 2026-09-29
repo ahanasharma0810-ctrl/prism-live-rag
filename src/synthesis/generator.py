@@ -99,11 +99,15 @@ class ExtractiveGenerator:
         q = content_terms(query)
         claims: list[Claim] = []
         for hit in evidence:
+            units = _units(hit.chunk.text)
             scored = []
-            for pos, unit in enumerate(_units(hit.chunk.text)):
+            for pos, unit in enumerate(units):
                 overlap = len(q & content_terms(unit))
                 if overlap:
                     scored.append((-overlap, pos, unit))
+            if not scored and q & content_terms(hit.chunk.heading):
+                # the request matches the section heading, not its sentences: use the leading units
+                scored = [(0, pos, unit) for pos, unit in enumerate(units)]
             for _, _, unit in sorted(scored)[: self.per_chunk]:
                 claims.append(
                     Claim(id=f"c{len(claims) + 1}", text=unit, subintent_id="q1", chunk_ids=[hit.chunk.chunk_id])
