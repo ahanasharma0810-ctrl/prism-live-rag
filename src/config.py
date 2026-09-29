@@ -55,6 +55,9 @@ class Settings:
     stable_chunks: int = field(default_factory=lambda: int(_env("PRISM_STABLE_CHUNKS", "1")))
     max_provisional: int = field(default_factory=lambda: int(_env("PRISM_MAX_PROVISIONAL", "1")))
 
+    # decomposition and fusion (phase 3)
+    decomposer: str = field(default_factory=lambda: _env("PRISM_DECOMPOSER", "rules"))
+
     llm_provider: str = field(default_factory=lambda: _env("PRISM_LLM_PROVIDER", "none"))
     llm_model: str = field(default_factory=lambda: _env("PRISM_LLM_MODEL", ""))
     llm_base_url: str = field(default_factory=lambda: _env("PRISM_LLM_BASE_URL", "http://localhost:11434"))
