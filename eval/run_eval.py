@@ -1,6 +1,10 @@
 """Run a system over the dev scenarios and report metrics (step 1.10).
 
     python eval/run_eval.py --system baseline [--out results/baseline_dev.json] [--verbose]
+    python eval/run_eval.py --system controller_only --metrics g2 [--controller-mode rule_only]
+
+Phase 2 metrics (controller_only): see eval/controller_eval.py (G2 early retrieval rate,
+false-trigger rate, seconds gained vs baseline).
 
 Phase 1 metrics (baseline):
 * recall@5            share of gold supporting sections found among the top-5 reranked chunks
@@ -31,6 +35,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from eval.controller_eval import evaluate_controller, print_controller_summary  # noqa: E402
 from eval.scenarios import SCENARIO_DIR, Scenario, load_scenarios  # noqa: E402
 from src.baseline import BaselinePipeline  # noqa: E402
 from src.config import get_settings  # noqa: E402
@@ -39,6 +44,7 @@ from src.synthesis.citations import CitationIndex, extract_citations  # noqa: E4
 
 K = 5
 SYSTEMS = {"baseline": 1, "controller_only": 2, "decompose_fusion": 3, "full": 4}
+IMPLEMENTED = {"baseline": {"phase1"}, "controller_only": {"g2"}}
 
 
 def recall_at_k(retrieved_citations: list[str], gold: list[str]) -> float:
@@ -168,34 +174,57 @@ def print_summary(s: dict) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--system", default="baseline", choices=sorted(SYSTEMS))
-    parser.add_argument("--metrics", default="phase1", help="Only 'phase1' is implemented.")
+    parser.add_argument("--metrics", default=None, help="baseline: phase1 (default); controller_only: g2 (default).")
+    parser.add_argument("--controller-mode", choices=["rule_only", "rule_stability"], default=None,
+                        help="controller_only: override PRISM_CONTROLLER_MODE.")
     parser.add_argument("--scenarios", type=Path, default=SCENARIO_DIR)
     parser.add_argument("--out", type=Path, help="Write full per-turn results as JSON.")
     parser.add_argument("--verbose", action="store_true", help="Print one line per turn.")
     args = parser.parse_args()
 
-    if args.system != "baseline":
+    if args.system not in IMPLEMENTED:
         print(f"--system {args.system} is not implemented until Phase {SYSTEMS[args.system]}.", file=sys.stderr)
         return 2
-    if args.metrics != "phase1":
-        print(f"--metrics {args.metrics} is not implemented in Phase 1.", file=sys.stderr)
+    metrics = args.metrics or next(iter(IMPLEMENTED[args.system]))
+    if metrics not in IMPLEMENTED[args.system]:
+        print(f"--metrics {metrics} is not implemented for --system {args.system} "
+              f"(available: {sorted(IMPLEMENTED[args.system])}).", file=sys.stderr)
         return 2
 
-    results = asyncio.run(evaluate_baseline(load_scenarios(args.scenarios)))
-    if args.verbose:
-        for row in results["turns"]:
-            if "skipped" in row:
-                print(f"{row['scenario']:<12} t{row['turn']} skipped: {row['skipped']}")
-                continue
-            print(f"{row['scenario']:<12} t{row['turn']} recall@5={row['recall_at_5']} "
-                  f"cited={row['cited']} uncertainty={'yes' if row['uncertainty'] else 'no'} "
-                  f"{row['latency_ms']:.1f}ms")
-    print_summary(results["summary"])
+    scenarios = load_scenarios(args.scenarios)
+    if args.system == "controller_only":
+        from src.retrieval.factory import build_retrieval
+        from src.stream.controller import build_controller
+
+        settings = get_settings()
+        stack = build_retrieval(settings)
+        controller = build_controller(stack, settings, mode=args.controller_mode)
+        results = asyncio.run(evaluate_controller(scenarios, settings, stack, controller))
+        if args.verbose:
+            for row in results["turns"]:
+                print(f"{row['scenario']:<12} t{row['turn']} req={row['retrieval_required']!s:<5} "
+                      f"early={row['early']!s:<5} first={row['first_retrieval_s']} end={row['utterance_end_s']} "
+                      f"triggers={row['triggers']} suppressed={row['suppressed_reason']}")
+        print_controller_summary(results["summary"])
+        exit_code = 0
+    else:
+        results = asyncio.run(evaluate_baseline(scenarios))
+        if args.verbose:
+            for row in results["turns"]:
+                if "skipped" in row:
+                    print(f"{row['scenario']:<12} t{row['turn']} skipped: {row['skipped']}")
+                    continue
+                print(f"{row['scenario']:<12} t{row['turn']} recall@5={row['recall_at_5']} "
+                      f"cited={row['cited']} uncertainty={'yes' if row['uncertainty'] else 'no'} "
+                      f"{row['latency_ms']:.1f}ms")
+        print_summary(results["summary"])
+        exit_code = 1 if results["summary"]["citation_validity"]["fabricated"] else 0
+
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(results, indent=2, ensure_ascii=False), encoding="utf-8")
         print(f"wrote {args.out}")
-    return 1 if results["summary"]["citation_validity"]["fabricated"] else 0
+    return exit_code
 
 
 if __name__ == "__main__":
