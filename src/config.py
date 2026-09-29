@@ -49,6 +49,11 @@ class Settings:
     probe_k: int = field(default_factory=lambda: int(_env("PRISM_PROBE_K", "3")))
     probe_min_content_terms: int = field(default_factory=lambda: int(_env("PRISM_PROBE_MIN_CONTENT_TERMS", "2")))
     probe_min_tokens: int = field(default_factory=lambda: int(_env("PRISM_PROBE_MIN_TOKENS", "3")))
+    # retrieval controller (phase 2)
+    controller_mode: str = field(default_factory=lambda: _env("PRISM_CONTROLLER_MODE", "rule_stability"))
+    stability_threshold: float = field(default_factory=lambda: float(_env("PRISM_STABILITY_THRESHOLD", "0.5")))
+    stable_chunks: int = field(default_factory=lambda: int(_env("PRISM_STABLE_CHUNKS", "1")))
+    max_provisional: int = field(default_factory=lambda: int(_env("PRISM_MAX_PROVISIONAL", "1")))
 
     llm_provider: str = field(default_factory=lambda: _env("PRISM_LLM_PROVIDER", "none"))
     llm_model: str = field(default_factory=lambda: _env("PRISM_LLM_MODEL", ""))

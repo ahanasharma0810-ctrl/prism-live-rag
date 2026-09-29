@@ -31,6 +31,34 @@
       "default": null,
       "description": "Set when action == 'retrieve'.",
       "title": "Trigger"
+    },
+    "ts": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Stream time of the decision (s).",
+      "title": "Ts"
+    },
+    "stability_score": {
+      "anyOf": [
+        {
+          "maximum": 1,
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stability Score"
     }
   },
   "required": [
