@@ -67,6 +67,18 @@ class TurnOutcome:
         return len(self.stream.retrievals)
 
 
+def unique_by_text(claims: list[Claim]) -> list[Claim]:
+    """Claims to render: one per distinct text (two sub-intents can yield the same corpus span;
+    the ledger keeps both claims, the answer shows the statement once)."""
+    seen: set[str] = set()
+    out = []
+    for c in claims:
+        if c.text not in seen:
+            seen.add(c.text)
+            out.append(c)
+    return out
+
+
 def _evidence_for(stream: StreamTurnResult, qid: str) -> list[ScoredChunk]:
     own = [h for h in stream.evidence if qid in stream.evidence_sources.get(h.chunk.chunk_id, [])]
     return own or stream.sub_results.get(qid, [])
@@ -141,7 +153,7 @@ class SessionPipeline:
         current = ledger.current
         prior_citations = ledger.citations()
         t = time.perf_counter()
-        text, note = await present(stream.utterance, ledger.active_claims(), client=make_llm_client(self.settings),
+        text, note = await present(stream.utterance, unique_by_text(ledger.active_claims()), client=make_llm_client(self.settings),
                                    trace=trace)
         stages["presentation"] = (time.perf_counter() - t) * 1000
         new_ids = [c for c in extract_citations(text) if c not in prior_citations]
@@ -275,7 +287,7 @@ class SessionPipeline:
 
     @staticmethod
     def _record(ledger: ClaimLedger, stream: StreamTurnResult, uncertainty: str | None) -> OutputRecord:
-        answer = render_answer(ledger.active_claims())
+        answer = render_answer(unique_by_text(ledger.active_claims()))
         return OutputRecord(retrieval_events=stream.retrieval_events,
                             sub_queries=[q.text for q in ledger.subqueries()], answer=answer,
                             citations=extract_citations(answer), uncertainty=uncertainty)

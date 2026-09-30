@@ -72,3 +72,15 @@ def test_phase5_documents_exist_and_brief_fits_six_pages():
     bench = (ROOT / "reports" / "BENCHMARK.md").read_text(encoding="utf-8")
     assert bench.count("**F") >= 3, "benchmark needs at least three analysed edge-case failures"
     assert "Architectural ablations" in bench
+
+
+def test_demo_script_covers_required_items_and_files_exist():
+    demo = (ROOT / "reports" / "DEMO_SCRIPT.md").read_text(encoding="utf-8")
+    for item in ("Early retrieval", "Multi-intent decomposition", "Late-detail refinement",
+                 "Presentation suppression", "Citation traceability", "Live telemetry"):
+        assert item in demo, item
+    import re
+
+    for name in set(re.findall(r"eval/dev_scenarios/(\w+\.json)", demo)) | {f"{s}.json" for s in
+                                                                            re.findall(r"--scenario (\w+)", demo)}:
+        assert (ROOT / "eval" / "dev_scenarios" / name).exists(), name
