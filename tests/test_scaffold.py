@@ -61,3 +61,14 @@ def test_all_llm_calls_live_in_llm_client():
             if mod in banned or any(mod.startswith(b + ".") for b in banned):
                 offenders.append(f"{path.relative_to(ROOT)} imports {mod}")
     assert not offenders, offenders
+
+
+def test_phase5_documents_exist_and_brief_fits_six_pages():
+    brief = (ROOT / "reports" / "ARCHITECTURE_BRIEF.md").read_text(encoding="utf-8")
+    assert len(brief.split()) <= 3300, "architecture brief must stay within ~6 pages"
+    for section in ("Retrieval trigger logic", "Decomposition strategy", "Data provenance", "Trade-offs",
+                    "Failure modes"):
+        assert section in brief, section
+    bench = (ROOT / "reports" / "BENCHMARK.md").read_text(encoding="utf-8")
+    assert bench.count("**F") >= 3, "benchmark needs at least three analysed edge-case failures"
+    assert "Architectural ablations" in bench
