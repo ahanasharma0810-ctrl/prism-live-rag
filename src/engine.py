@@ -84,6 +84,8 @@ class StreamTurnResult:
     sub_results: dict[str, list[ScoredChunk]] = field(default_factory=dict)
     evidence: list[ScoredChunk] = field(default_factory=list)  # fused across sub-queries (3.5)
     evidence_sources: dict[str, list[str]] = field(default_factory=dict)  # chunk id -> sub-query ids
+    stage_ms: dict[str, float] = field(default_factory=dict)  # controller / planning / retrieval / fusion
+    request_id: str = ""
 
     @property
     def retrieval_events(self) -> list[RetrievalEvent]:
@@ -114,6 +116,8 @@ class _TurnState:
     planned_transcript: str | None = None
     cache: SpeculativeCache | None = None
     aliases: dict[str, RetrievalRun] = field(default_factory=dict)  # sub-query id -> reused run (3.6)
+    stage_ms: dict[str, float] = field(default_factory=lambda: {"controller": 0.0, "planning": 0.0,
+                                                                "retrieval": 0.0, "fusion": 0.0})
 
 
 class StreamingEngine:
@@ -146,6 +150,7 @@ class StreamingEngine:
         t = time.perf_counter()
         run.results = await asyncio.to_thread(self._search, run.event.query)
         run.latency_ms = (time.perf_counter() - t) * 1000
+        st.stage_ms["retrieval"] += run.latency_ms
         # only the search for the sub-query's latest query may set its results: an older
         # (e.g. provisional) search can finish later and must not overwrite newer results
         if run.subquery_id is not None and st.searched.get(run.subquery_id) == run.event.query:
@@ -185,9 +190,11 @@ class StreamingEngine:
         t = time.perf_counter()
         plan = await self.planner.plan(transcript, st.live, st.trace)
         st.live, st.planned_transcript = plan.subqueries, transcript
+        plan_ms = (time.perf_counter() - t) * 1000
+        st.stage_ms["planning"] += plan_ms
         st.trace.emit(
             ev.DECOMPOSITION,
-            stage_latency_ms=(time.perf_counter() - t) * 1000,
+            stage_latency_ms=plan_ms,
             stream_ts=ts,
             planner=self.planner.name,
             ops=[o.model_dump(exclude_defaults=True) for o in plan.ops],
@@ -223,10 +230,13 @@ class StreamingEngine:
         speed: float = 1.0,
         request_id: str | None = None,
         session_id: str | None = None,
+        expects_answer: bool = False,
     ) -> StreamTurnResult:
+        """`expects_answer`: the caller (the session pipeline) will emit answer events for this
+        request id; recorded so the telemetry coverage checker knows what a complete trace is."""
         trace = self.telemetry.trace(request_id, session_id)
         trace.emit(ev.REQUEST_STARTED, system="streaming", controller=self.controller.name, clock=clock,
-                   decompose=self.decompose, has_prior_output=bool(prior_output))
+                   decompose=self.decompose, has_prior_output=bool(prior_output), expects_answer=expects_answer)
         self.controller.start_utterance(prior_output)
         if self.planner is not None:
             self.planner.reset()
@@ -239,12 +249,14 @@ class StreamingEngine:
         async for event in replay(chunks, clock=clock, speed=speed):
             transcript = event.transcript
             is_end = event.kind == "utterance_end"
+            t_ctrl = time.perf_counter()
             if is_end:
                 end_ts = event.ts
                 trace.emit(ev.UTTERANCE_END, stream_ts=event.ts, implicit=event.implicit_end)
                 decision = await self.controller.on_utterance_end(transcript, event.ts)
             else:
                 decision = await self.controller.on_chunk(transcript, event.ts)
+            st.stage_ms["controller"] += (time.perf_counter() - t_ctrl) * 1000
             decisions.append(decision)
             trace.emit(ev.CONTROLLER_DECISION, stream_ts=event.ts, action=decision.action, reason=decision.reason,
                        trigger_decided=decision.trigger, stability_score=decision.stability_score)
@@ -277,7 +289,8 @@ class StreamingEngine:
                                   top_k=self.settings.fusion_top_k, quota=self.settings.fusion_quota,
                                   near_duplicate=self.settings.fusion_near_duplicate)
             result.evidence, result.evidence_sources = fused.evidence, fused.sources
-            trace.emit(ev.FUSION_COMPLETED, stage_latency_ms=(time.perf_counter() - t) * 1000,
+            st.stage_ms["fusion"] = (time.perf_counter() - t) * 1000
+            trace.emit(ev.FUSION_COMPLETED, stage_latency_ms=st.stage_ms["fusion"],
                        chunk_ids=[h.chunk.chunk_id for h in fused.evidence], sources=fused.sources,
                        dropped_duplicates=fused.dropped_duplicates,
                        dropped_near_duplicates=fused.dropped_near_duplicates)
@@ -286,7 +299,10 @@ class StreamingEngine:
         trace.emit(ev.REQUEST_COMPLETED, stage_latency_ms=trace.elapsed_ms(), retrievals=len(st.runs),
                    sub_queries=len(st.live), first_retrieval_s=result.first_retrieval_s, utterance_end_s=end_ts,
                    retrieved_early=result.retrieved_early, suppressed_reason=suppressed,
-                   cache_hits=st.cache.hits if st.cache is not None else 0)
+                   cache_hits=st.cache.hits if st.cache is not None else 0,
+                   stage_ms={k: round(v, 3) for k, v in st.stage_ms.items()})
+        result.stage_ms = {k: round(v, 3) for k, v in st.stage_ms.items()}
+        result.request_id = trace.request_id
         result.telemetry = list(trace.events)
         return result
 
