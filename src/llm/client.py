@@ -417,21 +417,31 @@ def make_llm_client(settings: Settings | None = None) -> LLMClient | None:
     raise LLMError(f"unknown PRISM_LLM_PROVIDER {provider!r} (expected none, ollama or openai_compatible)")
 
 
-def check_llm(settings: Settings | None = None) -> ModelHealth | None:
+async def acheck_llm(settings: Settings | None = None) -> ModelHealth | None:
     """Health of the configured LLM, or None when PRISM_LLM_PROVIDER=none."""
     client = make_llm_client(settings)
     if client is None:
         return None
-    return asyncio.run(client.health())
+    return await client.health()
 
 
-def require_llm(settings: Settings | None = None) -> ModelHealth | None:
+async def arequire_llm(settings: Settings | None = None) -> ModelHealth | None:
     """Fail fast before a run: a configured but unreachable / unpulled model is an error, never a
     silent fallback to the offline path."""
-    health = check_llm(settings)
+    health = await acheck_llm(settings)
     if health is not None and not health.ok:
         raise LLMError(health.message)
     return health
+
+
+def check_llm(settings: Settings | None = None) -> ModelHealth | None:
+    """Synchronous `acheck_llm` (for CLIs; do not call from inside an event loop)."""
+    return asyncio.run(acheck_llm(settings))
+
+
+def require_llm(settings: Settings | None = None) -> ModelHealth | None:
+    """Synchronous `arequire_llm` (for CLIs; do not call from inside an event loop)."""
+    return asyncio.run(arequire_llm(settings))
 
 
 def main() -> int:

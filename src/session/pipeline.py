@@ -102,14 +102,14 @@ class SessionPipeline:
     # ------------------------------------------------------------------ turn
 
     async def handle_turn(self, session_id: str, chunks: list[TranscriptChunk],
-                          request_id: str | None = None) -> TurnOutcome:
+                          request_id: str | None = None, clock: str = "simulated", speed: float = 1.0) -> TurnOutcome:
         request_id = request_id or uuid.uuid4().hex[:12]  # one id for the engine and pipeline events
         session = self.store.get_or_create(session_id)
         session.turns += 1
         turn = session.turns
         ledger = session.ledger
         version_from = ledger.version
-        stream = await self.engine.run_turn(chunks, prior_output=session.prior_output,
+        stream = await self.engine.run_turn(chunks, prior_output=session.prior_output, clock=clock, speed=speed,
                                             request_id=request_id, session_id=session_id, expects_answer=True)
         trace = self.telemetry.trace(request_id, session_id)
         before = ledger.snapshot()

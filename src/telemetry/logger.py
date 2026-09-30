@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -17,13 +18,18 @@ from src.schemas import TelemetryEvent
 
 
 class TelemetryLogger:
-    def __init__(self, path: Path | None = None):
+    """`echo`, if given, is called with every event as it is written (live display for demos)."""
+
+    def __init__(self, path: Path | None = None, echo: Callable[[TelemetryEvent], None] | None = None):
         self.path = path
+        self.echo = echo
         self._lock = threading.Lock()
         if path is not None:
             path.parent.mkdir(parents=True, exist_ok=True)
 
     def write(self, event: TelemetryEvent) -> None:
+        if self.echo is not None:
+            self.echo(event)
         if self.path is None:
             return
         line = event.model_dump_json(exclude_none=True)
