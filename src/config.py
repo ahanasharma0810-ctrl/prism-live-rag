@@ -66,6 +66,11 @@ class Settings:
     cache_similarity: float = field(default_factory=lambda: float(_env("PRISM_CACHE_SIMILARITY", "0.75")))
     anti_fragmentation: bool = field(default_factory=lambda: _env("PRISM_ANTI_FRAGMENTATION", "1") not in ("0", "false", "no"))
 
+    # grounding (phase 4)
+    grounding_judge: str = field(default_factory=lambda: _env("PRISM_GROUNDING_JUDGE", "lexical"))
+    grounding_mode: str = field(default_factory=lambda: _env("PRISM_GROUNDING_MODE", "drop"))
+    lexical_support_threshold: float = field(default_factory=lambda: float(_env("PRISM_LEXICAL_SUPPORT_THRESHOLD", "0.8")))
+
     llm_provider: str = field(default_factory=lambda: _env("PRISM_LLM_PROVIDER", "none"))
     llm_model: str = field(default_factory=lambda: _env("PRISM_LLM_MODEL", ""))
     llm_base_url: str = field(default_factory=lambda: _env("PRISM_LLM_BASE_URL", "http://localhost:11434"))

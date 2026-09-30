@@ -25,6 +25,14 @@
       "minimum": 1,
       "title": "Version",
       "type": "integer"
+    },
+    "constraints": {
+      "description": "Constraints this claim depends on.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Constraints",
+      "type": "array"
     }
   },
   "required": [
