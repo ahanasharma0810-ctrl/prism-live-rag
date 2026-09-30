@@ -4,6 +4,7 @@
     python eval/run_eval.py --system controller_only --metrics g2 [--controller-mode rule_only]
     python eval/run_eval.py --system decompose_fusion --metrics g3
     python eval/run_eval.py --system full --metrics g4,g5
+    python eval/run_eval.py --system full --metrics all     # full replay: gates G1-G6 (eval/replay.py)
 
 Phase 2 metrics (controller_only): see eval/controller_eval.py (G2 early retrieval rate,
 false-trigger rate, seconds gained vs baseline).
@@ -52,7 +53,7 @@ from src.synthesis.citations import CitationIndex, extract_citations  # noqa: E4
 
 K = 5
 SYSTEMS = {"baseline": 1, "controller_only": 2, "decompose_fusion": 3, "full": 4}
-IMPLEMENTED = {"baseline": {"phase1"}, "controller_only": {"g2"}, "decompose_fusion": {"g3"}, "full": {"g4,g5"}}
+IMPLEMENTED = {"baseline": {"phase1"}, "controller_only": {"g2"}, "decompose_fusion": {"g3"}, "full": {"g4,g5", "all"}}
 
 
 def recall_at_k(retrieved_citations: list[str], gold: list[str]) -> float:
@@ -69,10 +70,10 @@ def percentile(values: list[float], q: float) -> float:
     return ordered[idx]
 
 
-async def evaluate_baseline(scenarios: list[Scenario]) -> dict:
-    settings = get_settings()
-    stack = build_retrieval(settings)
-    pipeline = BaselinePipeline(settings, stack=stack)
+async def evaluate_baseline(scenarios: list[Scenario], settings=None, telemetry=None, stack=None) -> dict:
+    settings = settings or get_settings()
+    stack = stack or build_retrieval(settings)
+    pipeline = BaselinePipeline(settings, stack=stack, telemetry=telemetry)
     index = CitationIndex(stack.chunks)
 
     turns_out = []
@@ -86,7 +87,7 @@ async def evaluate_baseline(scenarios: list[Scenario]) -> dict:
                 continue
             result = await pipeline.answer(
                 utterance, utterance_end_s=t.utterance_end_s,
-                request_id=f"{scenario.id}-t{t.turn}", session_id=session_id,
+                request_id=f"baseline-{scenario.id}-t{t.turn}", session_id=session_id,
             )
             top_citations = [h.chunk.citation for h in result.reranked[:K]]
             cited = extract_citations(result.record.answer)
@@ -99,6 +100,7 @@ async def evaluate_baseline(scenarios: list[Scenario]) -> dict:
                 "retrieval_required": t.retrieval_required,
                 "expect_uncertainty": t.expect_uncertainty,
                 "gold_supporting": gold,
+                "also_relevant": sorted({c for g in t.gold_sub_intents for c in g.also_relevant}),
                 "top5": top_citations,
                 "recall_at_5": recall_at_k(top_citations, gold) if (t.retrieval_required and gold) else None,
                 "cited": cited,
@@ -197,12 +199,21 @@ def main() -> int:
     if args.system == "full":
         metrics = ",".join(sorted(m.strip() for m in metrics.split(",") if m.strip()))
         metrics = "g4,g5" if metrics in ("g4", "g5", "g4,g5") else metrics
+        metrics = "all" if "all" in metrics.split(",") else metrics
     if metrics not in IMPLEMENTED[args.system]:
         print(f"--metrics {metrics} is not implemented for --system {args.system} "
               f"(available: {sorted(IMPLEMENTED[args.system])}).", file=sys.stderr)
         return 2
 
     scenarios = load_scenarios(args.scenarios)
+    if args.system == "full" and metrics == "all":
+        from eval.replay import run as run_replay
+        from eval.replay import summary_markdown
+
+        out = args.out or ROOT / "results" / "replay"
+        res = asyncio.run(run_replay(out if out.suffix != ".json" else out.parent))
+        print(summary_markdown(res))
+        return 1 if any(g["pass"] is False for g in res["gates"].values()) else 0
     if args.system == "full":
         from src.session.pipeline import SessionPipeline
 

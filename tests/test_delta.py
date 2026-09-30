@@ -140,3 +140,12 @@ async def test_every_rendered_citation_exists(pipeline):
     out = await turn(pipeline, "s", "What does the retrieval controller decide, and which gate measures it?")
     assert out.invalid_citations == [] and out.record.citations
     assert out.grounding is not None and out.grounding.fabricated_ids == []
+
+
+def test_rendered_answer_shows_each_statement_once():
+    from src.session.pipeline import unique_by_text
+
+    a = Claim(id="s1.c1", text="Same span.", subintent_id="s1", chunk_ids=["Doc_01 §6#1"])
+    b = Claim(id="s2.c1", text="Same span.", subintent_id="s2", chunk_ids=["Doc_01 §6#1"])
+    c = Claim(id="s2.c2", text="Other.", subintent_id="s2", chunk_ids=["Doc_01 §5#1"])
+    assert [x.id for x in unique_by_text([a, b, c])] == ["s1.c1", "s2.c2"]

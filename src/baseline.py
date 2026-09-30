@@ -124,7 +124,14 @@ class BaselinePipeline:
             citations=valid,
             uncertainty=note,
         )
-        trace.emit(ev.ANSWER_EMITTED, answer_version=1, citations=valid, uncertainty=note is not None)
+        llm = [e for e in trace.events if e.event == ev.LLM_CALL]
+        tokens_in, tokens_out = sum(e.tokens_in or 0 for e in llm), sum(e.tokens_out or 0 for e in llm)
+        trace.emit(ev.ANSWER_EMITTED, tokens_in=tokens_in, tokens_out=tokens_out,
+                   est_cost_usd=ev.estimate_cost_usd(tokens_in, tokens_out, s.cost_per_1k_input, s.cost_per_1k_output),
+                   answer_version_from=0, answer_version=1, kind="baseline", citations=valid,
+                   sub_queries=[{"id": "q1", "text": utterance, "constraints": []}],
+                   sources={c.id: c.chunk_ids for c in claims}, stage_ms={k: round(v, 3) for k, v in stage.items()},
+                   uncertainty=note is not None)
         latency = trace.elapsed_ms()
         trace.emit(ev.REQUEST_COMPLETED, stage_latency_ms=latency, stage_ms={k: round(v, 3) for k, v in stage.items()})
         return BaselineResult(

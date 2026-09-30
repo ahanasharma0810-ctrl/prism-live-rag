@@ -74,3 +74,13 @@ async def test_pipeline_presentation_turn_makes_zero_retrieval_calls(stack, tmp_
     assert out.answer_version == first.answer_version  # content unchanged, version unchanged
     assert set(out.record.citations) <= set(first.record.citations)
     assert out.record.answer.startswith("- ") and out.ledger_diff["added"] == [] and out.ledger_diff["removed"] == []
+
+
+async def test_presentation_request_after_an_empty_answer_does_not_search(stack, tmp_path):
+    """The user saw only an uncertainty note; 'shorten that' must not trigger a corpus search."""
+    p = SessionPipeline(Settings(log_dir=tmp_path, llm_provider="none"), stack=stack, telemetry=TelemetryLogger(None))
+    first = await p.handle_turn("s", chunks_from_text(["What is the refund deadline for hotel bookings in Mumbai?"]))
+    assert first.record.answer == "" and first.record.uncertainty
+    out = await p.handle_turn("s", chunks_from_text(["Can you shorten that", "to one sentence?"]))
+    assert out.kind == "presentation_only" and out.retrieval_calls == 0
+    assert "no earlier answer" in out.record.uncertainty.lower()

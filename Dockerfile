@@ -1,10 +1,11 @@
-# CONFIGURATION ONLY - this image has not been built or run during Phase 1
-# (Docker is not available in the build environment). See reports/PHASE_1_REPORT.md.
+# CONFIGURATION ONLY in this repository's build environment: this image has not been built or
+# run there (no Docker daemon). See reports/FINAL_CHECKLIST.md for what remains to verify.
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PRISM_IN_CONTAINER=1
 
 WORKDIR /app
 
@@ -13,5 +14,7 @@ RUN pip install -r requirements-dev.txt
 
 COPY . .
 
-# Indexes are built from data/corpus/ at container start, then a sample query is answered.
-CMD ["sh", "-c", "python -m src.corpus.build_index && python -m src.baseline --query \"$SAMPLE_QUERY\""]
+# One non-interactive command: build indexes from data/corpus/, run the full replay suite
+# (streaming system + baseline over eval/dev_scenarios), write results/replay/{results.json,summary.md}
+# and exit non-zero if any gate fails. The LLM profile comes from PRISM_* environment variables.
+CMD ["sh", "-c", "python -m src.corpus.build_index && python eval/replay.py --out results/replay"]

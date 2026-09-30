@@ -88,7 +88,8 @@ def transform(kind: str, count: int | None, claims: list[Claim]) -> str:
     return render_answer(claims)  # repeat
 
 
-async def present(instruction: str, claims: list[Claim], client: LLMClient | None = None) -> tuple[str, str | None]:
+async def present(instruction: str, claims: list[Claim], client: LLMClient | None = None,
+                  trace=None) -> tuple[str, str | None]:
     """Return (text, note). Never retrieves; never adds a citation."""
     original = render_answer(claims)
     if not claims:
@@ -104,7 +105,7 @@ async def present(instruction: str, claims: list[Claim], client: LLMClient | Non
               f"statement it supports; do not add, change or invent any marker or fact.\n\n"
               f"Request: {instruction}\n\nAnswer:\n{original}\n\nReturn JSON: {{\"text\": \"<rewritten answer>\"}}")
     try:
-        resp = await client.generate(prompt, schema=TransformedText)
+        resp = await client.generate(prompt, schema=TransformedText, trace=trace)
     except LLMError:
         return original, "The reformatting model is unavailable; the answer is shown unchanged."
     text = resp.parsed.text.strip()

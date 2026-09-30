@@ -77,6 +77,12 @@ class Settings:
     llm_api_key: str = field(default_factory=lambda: _env("PRISM_LLM_API_KEY", ""))
     llm_timeout_s: float = field(default_factory=lambda: float(_env("PRISM_LLM_TIMEOUT_S", "120")))
     llm_max_tokens: int = field(default_factory=lambda: int(_env("PRISM_LLM_MAX_TOKENS", "512")))
+    llm_retries: int = field(default_factory=lambda: int(_env("PRISM_LLM_RETRIES", "2")))
+    llm_num_ctx: int = field(default_factory=lambda: int(_env("PRISM_LLM_NUM_CTX", "4096")))
+    llm_keep_alive: str = field(default_factory=lambda: _env("PRISM_LLM_KEEP_ALIVE", "10m"))
+    # the intended model class (agent playbook: a 7-8B instruct model); reported, never assumed
+    llm_intended_min_b: float = field(default_factory=lambda: float(_env("PRISM_LLM_INTENDED_MIN_B", "6.5")))
+    llm_intended_max_b: float = field(default_factory=lambda: float(_env("PRISM_LLM_INTENDED_MAX_B", "9.5")))
     cost_per_1k_input: float = field(default_factory=lambda: float(_env("PRISM_COST_PER_1K_INPUT", "0")))
     cost_per_1k_output: float = field(default_factory=lambda: float(_env("PRISM_COST_PER_1K_OUTPUT", "0")))
 

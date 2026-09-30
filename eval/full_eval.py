@@ -28,6 +28,7 @@ import re
 import statistics
 import time
 
+from eval.decompose_eval import match_subintents
 from eval.scenarios import Scenario
 from src.schemas import Claim
 from src.session.pipeline import SessionPipeline
@@ -67,7 +68,8 @@ def shuffled_control(claims: list[Claim], index: CitationIndex, seed: int = 0) -
     return round(ok / len(claims), 4)
 
 
-async def evaluate_full(scenarios: list[Scenario], pipeline: SessionPipeline) -> dict:
+async def evaluate_full(scenarios: list[Scenario], pipeline: SessionPipeline, clock: str = "simulated",
+                        speed: float = 1.0, on_turn=None) -> dict:
     index = pipeline.index
     rows, emitted, generated_checks = [], [], []
     for scenario in scenarios:
@@ -75,7 +77,8 @@ async def evaluate_full(scenarios: list[Scenario], pipeline: SessionPipeline) ->
         previous_queries: set[str] = set()
         prev_version, prev_subintents = 0, set()
         for t in scenario.turns:
-            out = await pipeline.handle_turn(sid, t.chunks, request_id=f"{scenario.id}-t{t.turn}")
+            out = await pipeline.handle_turn(sid, t.chunks, request_id=f"{scenario.id}-t{t.turn}", clock=clock,
+                                             speed=speed)
             ledger = pipeline.store.get(sid).ledger
             queries = {e.query for e in out.record.retrieval_events}
             claims_now = ledger.active_claims()
@@ -98,6 +101,21 @@ async def evaluate_full(scenarios: list[Scenario], pipeline: SessionPipeline) ->
                 "fabricated": sorted(set(out.invalid_citations) | set(out.grounding.fabricated_ids if out.grounding else [])),
                 "new_claims": len(new_claims),
                 "new_claims_supported": sum(claim_supported(c, index) for c in new_claims),
+                # streaming fields for G2 / G3 (same run)
+                "request_id": out.request_id,
+                "retrieved": bool(out.stream.retrievals),
+                "early": out.stream.retrieved_early,
+                "first_retrieval_s": out.stream.first_retrieval_s,
+                "utterance_end_s": out.stream.utterance_end_s,
+                "gold_n": len(t.gold_sub_intents),
+                "predicted": [q.text for q in out.stream.sub_queries],
+                "g3_correct": len(match_subintents(t.gold_sub_intents, out.stream.sub_queries)),
+                "turn_citations": sorted({index.chunks[c].citation for cl in new_claims for c in cl.chunk_ids
+                                          if c in index.chunks}),
+                "gold_supporting": t.gold_supporting,
+                "also_relevant": sorted({c for g in t.gold_sub_intents for c in g.also_relevant}),
+                "stage_ms": out.stage_ms, "tokens_in": out.tokens_in, "tokens_out": out.tokens_out,
+                "est_cost_usd": out.est_cost_usd,
             }
             if refinement:
                 row["g5"] = {
@@ -110,6 +128,8 @@ async def evaluate_full(scenarios: list[Scenario], pipeline: SessionPipeline) ->
                 row["presentation_ok"] = out.retrieval_calls == 0 and set(out.record.citations) <= set(
                     rows[-1]["citations"] if rows and rows[-1]["scenario"] == scenario.id else [])
             rows.append(row)
+            if on_turn is not None:
+                on_turn(row)
             previous_queries |= queries
             prev_version, prev_subintents = ledger.version, set(ledger.subintents)
         pipeline.end_session(sid)
