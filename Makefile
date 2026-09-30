@@ -1,7 +1,7 @@
 PYTHON ?= python3
 Q ?= What are the technical evaluation gates and their target thresholds?
 
-.PHONY: help install install-optional test audit index baseline eval replay controller ablate decompose ablate3 full ablate4 coverage replay-llm replay-offline llm-check demo all stream schema manifest lock clean
+.PHONY: help install install-optional test audit index baseline eval replay controller ablate decompose ablate3 full ablate4 coverage replay-llm replay-offline llm-check demo all ablate-llm stream schema manifest lock clean
 
 help:
 	@echo "all               one-command clean run: venv + pinned deps + tests + indexes + full replay"
@@ -16,6 +16,7 @@ help:
 	@echo "replay-llm        full replay with the intended local 7-8B Ollama model (LLM_MODEL=...)"
 	@echo "replay-offline    full replay with the offline CPU profile (no model)"
 	@echo "demo              wall-clock demo of the four storyboard scenarios (reports/DEMO_SCRIPT.md)"
+	@echo "ablate-llm        fill the LLM rows of the phase 2-4 ablations (needs the 7-8B Ollama model)"
 	@echo "llm-check         verify the Ollama server and model (reachable, pulled, parameter size)"
 	@echo "controller        G2 controller metrics over eval/dev_scenarios (phase 2)"
 	@echo "ablate            controller ablation + threshold grid -> reports/PHASE_2_CONTROLLER_ABLATION.md"
@@ -95,6 +96,14 @@ demo:
 	$(PYTHON) eval/replay.py --scenario single_02 --scenario multi_03 --scenario late_02 --scenario present_04 \
 		--clock wall --show --out results/demo
 	$(PYTHON) eval/show_turns.py results/demo/results.json
+
+# Only the provider/model are set: the scripts keep their rule-based rows and add the LLM rows.
+LLM_BASE_ENV = PRISM_LLM_PROVIDER=ollama PRISM_LLM_MODEL=$(LLM_MODEL)
+ablate-llm:
+	$(LLM_BASE_ENV) $(PYTHON) -m src.llm.client --check
+	$(LLM_BASE_ENV) $(PYTHON) eval/ablate_controller.py --out reports/PHASE_2_CONTROLLER_ABLATION.md
+	$(LLM_BASE_ENV) $(PYTHON) eval/ablate_decompose.py --out reports/PHASE_3_ABLATION.md
+	$(LLM_BASE_ENV) $(PYTHON) eval/ablate_grounding.py --out reports/PHASE_4_GROUNDING_ABLATION.md
 
 # Offline CPU profile, explicitly (no model needed).
 OFFLINE_ENV = PRISM_LLM_PROVIDER=none PRISM_DECOMPOSER=rules PRISM_GROUNDING_JUDGE=lexical

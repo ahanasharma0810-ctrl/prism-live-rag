@@ -6,41 +6,62 @@ arrive, and grounds every claim in a `[Doc_ID §Section]` citation.
 The problem statement is the Theme 4 guide (transcribed into `data/corpus/Doc_01.md`).
 The build plan is `docs/agent_playbook.md`.
 
-> **Status: Phase 4 (Session Refinement & Grounding) complete.**
-> * Phase 1: a clean indexed corpus, schemas, a non-streaming **baseline**, dev scenarios and metrics.
-> * Phase 2: a stream simulator, a presentation-only suppression gate, a stability probe and a
->   wait/retrieve/suppress **controller** (G2 = 0.97 on the dev set).
-> * Phase 3: a multi-intent decomposer, an anti-fragmentation guard, context carry-over, parallel
->   per-sub-query retrieval, evidence fusion and a speculative cache (G3 = 0.75).
-> * Phase 4: an ephemeral **session store** and **claim ledger**, per-sub-intent synthesis, a
->   **grounding verifier**, per-intent uncertainty, a **delta engine** (new sub-intent /
->   parameter update / contradiction / presentation-only) that refines answers in place, and
->   presentation transforms with no retrieval (G4 = 1.0 literal support with 0 fabricated ids on
->   extractive claims; G5 = 5/5).
+> **Status: all five phases complete (Phase 5: telemetry, benchmarking & packaging).**
+> The only remaining environment-dependent task is the final Docker verification: `docker compose up` on a
+> machine with Docker and enough RAM for a 7-8B model. That run verifies gate G1 and the intended 7-8B
+> runtime together. See `reports/FINAL_CHECKLIST.md`.
 >
-> Full telemetry coverage, the benchmark report, the architecture brief and packaging are Phase 5
-> and are **not** done yet. See `reports/PHASE_1_REPORT.md` … `reports/PHASE_4_REPORT.md` and the
-> ablation reports in `reports/`.
+> | Gate | Target | Dev-set result (offline profile) |
+> |---|---|---|
+> | G1 reproducibility | one command, container, clean machine | one-command CLI runner verified on a fresh clone; **container not run (requires Docker)** |
+> | G2 early retrieval | >= 80% | 0.971 |
+> | G3 multi-intent | >= 70% | 0.75 |
+> | G4 grounding | >= 85% support, 0 fabricated | 1.0, 0 fabricated (extractive claims) |
+> | G5 session refinement | state continuity | 5/5 |
+> | G6 telemetry | 100% trace coverage | 80/80 |
+>
+> Deliverables:
+> * `reports/ARCHITECTURE_BRIEF.md`, `reports/BENCHMARK.md` and `reports/DEMO_SCRIPT.md` (the video still has to be recorded);
+> * `docs/TELEMETRY.md` + `schemas/`;
+> * per-phase reports and ablations in `reports/`.
 
-## Quick start (CPU only, no model downloads)
+## Quick start
 
-Requires Python 3.11.
+Requires Python 3.11. **One command** from a fresh clone (creates `.venv`, installs pinned
+dependencies, runs the tests, builds the indexes and runs the full replay with gates G1-G6):
 
 ```bash
-python -m venv .venv && . .venv/bin/activate
+bash scripts/run_all.sh          # or: make all
+cat results/replay/summary.md    # G1-G6 + streaming-vs-baseline table
+```
+
+### Runtime profiles
+
+| profile | how | needs |
+|---|---|---|
+| **intended** (agent playbook) | `docker compose up`: starts Ollama, pulls `PRISM_LLM_MODEL` (default `llama3.1:8b`, a 7-8B instruct model), runs the replay with LLM synthesis, LLM decomposer and LLM judge. Without Docker: run Ollama yourself, then `make llm-check` and `make replay-llm` | Docker (or Ollama) and enough RAM for a 7-8B model |
+| **offline** | code default (`PRISM_LLM_PROVIDER=none`): extractive answers, rule decomposer, lexical judge. `make replay-offline` or `docker compose -f docker-compose.offline.yml up` | nothing beyond Python |
+
+`python -m src.llm.client --check` reports whether the configured Ollama server is reachable, whether
+the model is pulled, and its parameter size (flagged if outside the intended 7-8B class). A configured
+but unavailable model stops a run; there is no silent fallback.
+
+### Individual commands
+
+```bash
 make install          # pinned runtime + dev dependencies (pydantic, rank-bm25, numpy, pytest, jsonschema)
 make test             # full test suite
+make replay           # full replay suite, gates G1-G6 -> results/replay/ (= python eval/run_eval.py --system full --metrics all)
+make demo             # wall-clock demo of the storyboard scenarios (reports/DEMO_SCRIPT.md)
+make coverage         # G6 trace coverage of logs/telemetry.jsonl
 make audit            # corpus audit
 make index            # build BM25 + dense indexes, write indexes/chunks.jsonl
 make baseline Q="What are the technical evaluation gates and their target thresholds?"
 make eval             # baseline over eval/dev_scenarios: recall@5, citation validity, latency
 make stream U="What does the stability probe compute? | And which gate measures | early retrieval?"   # streaming demo
-make decompose        # G3 multi-intent identification + fusion metrics over the dev scenarios
-make ablate3          # phase 3 ablations -> reports/PHASE_3_ABLATION.md
-make full             # G4 grounding + G5 session refinement over the dev scenarios (full system)
-make ablate4          # grounding-judge ablation -> reports/PHASE_4_GROUNDING_ABLATION.md
-make controller       # G2 early retrieval / false triggers / seconds gained over the dev scenarios
-make ablate           # controller ablation + threshold grid -> reports/PHASE_2_CONTROLLER_ABLATION.md
+make controller / decompose / full    # per-phase metrics (G2 / G3 / G4+G5)
+make ablate / ablate3 / ablate4       # per-phase ablations; make ablate-llm adds the LLM rows (needs the model)
+python -m src.corpus.show "Doc_01 §5" # resolve a citation to its corpus text
 ```
 
 Add `--clock wall` to `python -m src.engine ...` to replay fragments at real speed,
@@ -153,33 +174,30 @@ no downloads:
 | `PRISM_CACHE_SIMILARITY` | 0.75 | 0 disables the speculative cache |
 | `PRISM_GROUNDING_JUDGE` / `PRISM_GROUNDING_MODE` / `PRISM_LEXICAL_SUPPORT_THRESHOLD` | `lexical` / `drop` / 0.8 | `nli` (optional model), `llm` (needs an LLM); `flag` keeps failures but reports them |
 
-## Teammate setup (infrastructure, not done in Phase 1)
+## Final verification on suitable hardware (teammate)
 
-Nothing in this list has been run or verified yet.
+Everything that does not need Docker or a 7-8B model is implemented and verified: see
+`reports/FINAL_CHECKLIST.md` for what was verified locally, what was verified with the test-only fake
+Ollama server (`tests/fake_ollama.py`, wiring only), and what still needs the real runtime.
 
-1. **Docker.** `Dockerfile` and `docker-compose.yml` are configuration only. They have never
-   been built or run (no Docker daemon in the build environment). Run `docker compose up` on a
-   clean machine and fix what breaks (gate G1). The default service needs no LLM.
-2. **LLM.** Choose a model that fits CPU-only / ~4 GB RAM, then set `PRISM_LLM_PROVIDER`,
-   `PRISM_LLM_MODEL` and `PRISM_LLM_BASE_URL`.
-   * Local Ollama: `docker compose --profile llm up`, pull a small instruct model, set
-     `PRISM_LLM_PROVIDER=ollama`. Pin the `ollama/ollama` image tag in the compose file.
-   * Hosted / OpenAI-compatible endpoint: `PRISM_LLM_PROVIDER=openai_compatible`,
-     `PRISM_LLM_BASE_URL=https://.../v1`, `PRISM_LLM_API_KEY=...` (never commit `.env`).
-   * The HTTP request/response handling has only been tested against a local stub server.
-     Run one real request and check that token counts arrive in `logs/telemetry.jsonl`.
-   * Set `PRISM_COST_PER_1K_INPUT/OUTPUT` if the endpoint is billed.
-   * Then fill in the missing ablation arms. `PRISM_LLM_PROVIDER=... make ablate` adds the measured
-     `llm` controller row to `reports/PHASE_2_CONTROLLER_ABLATION.md`. `make ablate3` adds the `llm`
-     decomposer row to `reports/PHASE_3_ABLATION.md`. `make ablate4` adds the `llm` judge row to
-     `reports/PHASE_4_GROUNDING_ABLATION.md`. Re-run `make full` with `PRISM_LLM_PROVIDER` set to
-     measure G4 on LLM-written claims.
-3. **Dense model / reranker (optional).** `make install-optional` installs
-   sentence-transformers + faiss-cpu (pulls PyTorch). Verify RAM on the 4 GB target, pin the
-   versions in `requirements-optional.txt`, then set `PRISM_DENSE_BACKEND=sentence_transformers`
-   and/or `PRISM_RERANK_BACKEND=cross_encoder`. Dense embeddings are cached in `indexes/`.
-4. **Lockfile.** `uv.lock` was generated with `uv lock` and covers the optional extras. Regenerate
-   it with `make lock` after changing `pyproject.toml`. `requirements*.txt` are kept in sync by hand.
+1. **Docker + 7-8B runtime (one step).** On a machine with Docker and enough free RAM for a
+   quantised 7-8B model, run `docker compose up`.
+   - Expect: the `ollama-pull` job pulls `PRISM_LLM_MODEL`, and the `prism` container exits 0.
+   - Expect: `results/replay/summary.md` shows G1 PASS, and the run reports `intended_7_8b_class=True`.
+   - Pin the `ollama/ollama` image tag once verified, and confirm or replace the default model tag
+     (`PRISM_LLM_MODEL`).
+2. **LLM ablation rows.** `docker compose run --rm prism make ablate-llm` (or `make ablate-llm`
+   with a local Ollama) fills the LLM controller, LLM decomposer and LLM judge rows of the Phase 2-4
+   ablation reports.
+3. **Optional models.** `make install-optional` installs sentence-transformers + faiss-cpu
+   (PyTorch) for `PRISM_DENSE_BACKEND=sentence_transformers`, `PRISM_RERANK_BACKEND=cross_encoder`
+   and the NLI judge (`PRISM_GROUNDING_JUDGE=nli`). Pin the versions in
+   `requirements-optional.txt` once tested.
+4. **Hosted endpoint instead of Ollama** (optional): `PRISM_LLM_PROVIDER=openai_compatible`,
+   `PRISM_LLM_BASE_URL=https://.../v1`, `PRISM_LLM_API_KEY=...` (never commit `.env`), and
+   `PRISM_COST_PER_1K_INPUT/OUTPUT` if billed.
+5. **Lockfile.** `uv.lock` covers the optional extras; regenerate it with `make lock` after changing
+   `pyproject.toml`. `requirements*.txt` are kept in sync by hand.
 
 ## Rules this repo enforces (from the problem statement, [Doc_01 §3])
 

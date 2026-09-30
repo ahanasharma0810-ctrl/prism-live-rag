@@ -96,3 +96,25 @@ def test_one_command_runner_is_valid_bash():
     text = script.read_text(encoding="utf-8")
     for step in ("requirements-dev.txt", "pytest", "build_index", "eval/replay.py"):
         assert step in text, step
+
+
+def test_no_scenario_or_benchmark_text_is_hardcoded_in_src():
+    """Standing rule 2: no prompts, queries or canned answers from the evaluation data in src/.
+    Checks every dev-scenario chunk and gold label (>= 4 words) and the problem statement's own
+    example utterances against every module under src/."""
+    import json
+    import re
+
+    norm = lambda t: re.sub(r"[^a-z0-9 ]+", " ", t.lower()).split()  # noqa: E731
+    src_text = " ".join(" ".join(norm(p.read_text(encoding="utf-8"))) for p in (ROOT / "src").rglob("*.py"))
+    phrases = []
+    for path in (ROOT / "eval" / "dev_scenarios").glob("*.json"):
+        sc = json.loads(path.read_text(encoding="utf-8"))
+        for turn in sc["turns"]:
+            phrases += [c["text"] for c in turn["chunks"]]
+            phrases += [g["text"] for g in turn["gold_sub_intents"]]
+    phrases += ["I need to plan a customer workshop in", "Pune for 30 people", "Summarize the travel reimbursement rule",
+                "The trip was international and the booking was made after travel",
+                "Please repeat your last answer in two bullets", "Pune workshop venue capacity 30"]
+    leaked = [p for p in phrases if len(norm(p)) >= 4 and " ".join(norm(p)) in src_text]
+    assert not leaked, leaked
