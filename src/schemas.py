@@ -81,6 +81,7 @@ class Claim(_Strict):
     subintent_id: str
     chunk_ids: list[str]
     version: int = Field(default=1, ge=1)
+    constraints: list[str] = Field(default_factory=list, description="Constraints this claim depends on.")
 
 
 class AnswerVersion(_Strict):
