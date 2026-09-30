@@ -1,5 +1,11 @@
-"""Claim ledger: claims, sub-queries and evidence per session.
+"""Claim ledger (Phase 4). Minimal holder in step 4.1; completed in step 4.2."""
 
-Placeholder created by the Phase 1 scaffold (playbook step 1.2).
-Not implemented until Phase 4 (step 4.2); nothing imports this module yet.
-"""
+from __future__ import annotations
+
+
+class ClaimLedger:
+    def __init__(self) -> None:
+        self.clear()
+
+    def clear(self) -> None:
+        self.claims: dict = {}
