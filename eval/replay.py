@@ -101,6 +101,20 @@ def tokens_from_telemetry(events: list[dict]) -> dict:
     return out
 
 
+def citation_accuracy(rows: list[dict], cited_key: str) -> tuple[float | None, float | None]:
+    """Turn-level (recall, precision) of cited sections vs gold, over answerable turns.
+    recall: gold supporting sections cited; precision: cited sections that are gold or also-relevant."""
+    rec, prec = [], []
+    for r in rows:
+        if not r.get("retrieval_required") or not r.get("gold_supporting"):
+            continue
+        cited, gold = set(r.get(cited_key) or []), set(r["gold_supporting"])
+        rec.append(len(cited & gold) / len(gold))
+        if cited:
+            prec.append(len(cited & (gold | set(r.get("also_relevant") or []))) / len(cited))
+    return _mean(rec), _mean(prec)
+
+
 def compute_gates(full: dict, coverage, in_container: bool, completed: bool) -> dict:
     rows = full["turns"]
     eligible = [r for r in rows if r["retrieval_required"]]
@@ -198,6 +212,8 @@ async def run(out: Path, scenario_ids: list[str] | None = None, clock: str = "si
     eligible = [r for r in rows if r["retrieval_required"]]
     gained = [(r["utterance_end_s"] - r["first_retrieval_s"]) if r["first_retrieval_s"] is not None else None for r in eligible]
     stage_keys = sorted({k for r in rows for k in r["stage_ms"]})
+    s_rec, s_prec = citation_accuracy(rows, "turn_citations")
+    b_rec, b_prec = citation_accuracy(base["turns"], "cited")
     benchmark = {
         "retrieval starts before utterance end (eligible turns)": (gates["G2"]["value"], 0.0),
         "mean seconds of retrieval head start vs utterance end": (_mean([g or 0.0 for g in gained]), 0.0),
@@ -206,6 +222,7 @@ async def run(out: Path, scenario_ids: list[str] | None = None, clock: str = "si
         "no-retrieval turns (presentation-only / incomplete) that searched the corpus":
             (f"{sum(r['retrieval_calls'] > 0 for r in rows if not r['retrieval_required'])}/{bs['no_retrieval_turns']['n']}",
              f"{bs['no_retrieval_turns']['retrieved_anyway']}/{bs['no_retrieval_turns']['n']}"),
+        "answer cites the gold sections: recall / precision (answerable turns)": (f"{s_rec} / {s_prec}", f"{b_rec} / {b_prec}"),
         "fabricated citation ids": (len(full["summary"]["g4"]["fabricated_ids"]), bs["citation_validity"]["fabricated"]),
         "claims literally supported by cited chunk": (full["summary"]["g4"]["support_rate"], "n/a (not computed for baseline)"),
         "uncertainty on no-evidence turns": (f"{full['summary']['uncertainty']['emitted']}/{full['summary']['uncertainty']['expected_turns']}",

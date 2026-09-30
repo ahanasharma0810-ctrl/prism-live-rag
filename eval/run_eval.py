@@ -100,6 +100,7 @@ async def evaluate_baseline(scenarios: list[Scenario], settings=None, telemetry=
                 "retrieval_required": t.retrieval_required,
                 "expect_uncertainty": t.expect_uncertainty,
                 "gold_supporting": gold,
+                "also_relevant": sorted({c for g in t.gold_sub_intents for c in g.also_relevant}),
                 "top5": top_citations,
                 "recall_at_5": recall_at_k(top_citations, gold) if (t.retrieval_required and gold) else None,
                 "cited": cited,

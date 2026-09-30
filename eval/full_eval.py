@@ -110,6 +110,10 @@ async def evaluate_full(scenarios: list[Scenario], pipeline: SessionPipeline, cl
                 "gold_n": len(t.gold_sub_intents),
                 "predicted": [q.text for q in out.stream.sub_queries],
                 "g3_correct": len(match_subintents(t.gold_sub_intents, out.stream.sub_queries)),
+                "turn_citations": sorted({index.chunks[c].citation for cl in new_claims for c in cl.chunk_ids
+                                          if c in index.chunks}),
+                "gold_supporting": t.gold_supporting,
+                "also_relevant": sorted({c for g in t.gold_sub_intents for c in g.also_relevant}),
                 "stage_ms": out.stage_ms, "tokens_in": out.tokens_in, "tokens_out": out.tokens_out,
                 "est_cost_usd": out.est_cost_usd,
             }
