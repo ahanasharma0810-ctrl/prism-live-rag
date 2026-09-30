@@ -35,10 +35,10 @@ async def test_evaluate_baseline_on_a_subset(tmp_path, monkeypatch):
     assert (tmp_path / "logs" / "telemetry.jsonl").exists()
 
 
-def test_later_phase_systems_are_rejected():
-    result = subprocess.run([sys.executable, "eval/run_eval.py", "--system", "full"], cwd=ROOT,
+def test_unknown_system_is_rejected():
+    result = subprocess.run([sys.executable, "eval/run_eval.py", "--system", "phase9"], cwd=ROOT,
                             capture_output=True, text=True)
-    assert result.returncode == 2 and "Phase 4" in result.stderr
+    assert result.returncode == 2 and "invalid choice" in result.stderr
 
 
 async def test_extractive_falls_back_to_leading_units_on_heading_match():
