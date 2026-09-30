@@ -6,19 +6,21 @@ arrive, and grounds every claim in a `[Doc_ID §Section]` citation.
 The problem statement is the Theme 4 guide (transcribed into `data/corpus/Doc_01.md`).
 The build plan is `docs/agent_playbook.md`.
 
-> **Status: Phase 3 (Multi-Intent Parsing & Evidence Fusion) complete.**
+> **Status: Phase 4 (Session Refinement & Grounding) complete.**
 > * Phase 1: a clean indexed corpus, schemas, a non-streaming **baseline**, dev scenarios and metrics.
 > * Phase 2: a stream simulator, a presentation-only suppression gate, a stability probe and a
->   wait/retrieve/suppress **controller** that starts retrieval early (G2 = 0.97 on the dev set).
-> * Phase 3: a multi-intent **decomposer** (add/keep/merge diffs; rule-based on CPU, LLM when
->   configured), an anti-fragmentation guard, context carry-over, parallel per-sub-query
->   retrieval, cross-intent **evidence fusion** with a per-intent quota, and a speculative
->   reuse cache (G3 = 0.75, 0/22 single-intent turns over-split).
+>   wait/retrieve/suppress **controller** (G2 = 0.97 on the dev set).
+> * Phase 3: a multi-intent decomposer, an anti-fragmentation guard, context carry-over, parallel
+>   per-sub-query retrieval, evidence fusion and a speculative cache (G3 = 0.75).
+> * Phase 4: an ephemeral **session store** and **claim ledger**, per-sub-intent synthesis, a
+>   **grounding verifier**, per-intent uncertainty, a **delta engine** (new sub-intent /
+>   parameter update / contradiction / presentation-only) that refines answers in place, and
+>   presentation transforms with no retrieval (G4 = 1.0 literal support with 0 fabricated ids on
+>   extractive claims; G5 = 5/5).
 >
-> Session refinement, grounding verification and full telemetry are Phases 4-5 and are
-> **not** implemented yet (`src/session/`, `src/synthesis/grounding.py` are placeholders).
-> See `reports/PHASE_1_REPORT.md`, `reports/PHASE_2_REPORT.md`, `reports/PHASE_3_REPORT.md`
-> and the ablation reports in `reports/`.
+> Full telemetry coverage, the benchmark report, the architecture brief and packaging are Phase 5
+> and are **not** done yet. See `reports/PHASE_1_REPORT.md` … `reports/PHASE_4_REPORT.md` and the
+> ablation reports in `reports/`.
 
 ## Quick start (CPU only, no model downloads)
 
@@ -35,6 +37,8 @@ make eval             # baseline over eval/dev_scenarios: recall@5, citation val
 make stream U="What does the stability probe compute? | And which gate measures | early retrieval?"   # streaming demo
 make decompose        # G3 multi-intent identification + fusion metrics over the dev scenarios
 make ablate3          # phase 3 ablations -> reports/PHASE_3_ABLATION.md
+make full             # G4 grounding + G5 session refinement over the dev scenarios (full system)
+make ablate4          # grounding-judge ablation -> reports/PHASE_4_GROUNDING_ABLATION.md
 make controller       # G2 early retrieval / false triggers / seconds gained over the dev scenarios
 make ablate           # controller ablation + threshold grid -> reports/PHASE_2_CONTROLLER_ABLATION.md
 ```
@@ -73,6 +77,20 @@ transcript chunks ─► simulator ─► suppression gate ─► stability prob
             fusion: dedupe by id ─► near-duplicates ─► rerank per sub-query ─► per-intent quota ─► evidence
 ```
 
+Session path (Phase 4, `src/session/pipeline.py`, one turn at a time):
+
+```
+session store (per session id, in memory) ─► streaming engine (above), given the session's last output
+   ├─ presentation-only turn ─► transform existing answer (bullets / table / shorter / …), no retrieval, no new ids
+   ├─ nothing searchable     ─► clarification request, or per-intent "no evidence" notes
+   └─ otherwise ─► delta engine per clause vs. the claim ledger:
+                     new_subintent     ─► new sub-intent with its own evidence and claims
+                     parameter_update  ─► + constraint, + delta evidence, + delta claims (old claims kept)
+                     contradiction     ─► invalidate only claims depending on the negated term, add replacements
+                 ─► synthesis per sub-intent ─► grounding verifier (ids exist + support judge) ─► uncertainty per intent
+                 ─► ledger commits answer version N+1 ─► output record
+```
+
 Baseline path (Phase 1):
 
 ```
@@ -98,9 +116,10 @@ utterance ─► hybrid retrieval ─► rerank ─► evidence threshold ─►
 | `src/stream/` | `simulator.py` (replay), `suppression.py` (presentation-only gate), `stability.py` (probe), `controller.py` (policy + LLM controller option) |
 | `src/decompose/` | `decomposer.py` (rule / LLM, diff ops), `dedupe.py` (anti-fragmentation guard), `context.py` (carry-over), `planner.py` |
 | `src/retrieval/fusion.py`, `src/retrieval/cache.py` | cross-sub-query evidence fusion; per-utterance speculative reuse cache |
+| `src/session/` | `store.py` (ephemeral sessions), `ledger.py` (claims, sub-intents, evidence, versions, diffs), `delta.py` (delta engine), `pipeline.py` (full system) |
+| `src/synthesis/` (Phase 4 parts) | `generator.py` `synthesize_subintents`, `grounding.py` (verifier + judges), `uncertainty.py` per-intent notes, `presentation.py` (transforms) |
 | `src/engine.py` | streaming engine: controller decisions, planning, parallel retrieval, fusion, telemetry |
-| `eval/` | dev scenarios, `run_eval.py`, `controller_eval.py`, `ablate_controller.py`, `decompose_eval.py`, `ablate_decompose.py`. **Never imported by `src/`** (enforced by a test) |
-| `src/session/`, `src/synthesis/grounding.py` | placeholders for Phase 4 |
+| `eval/` | dev scenarios, `run_eval.py`, per-phase evaluators (`controller_eval.py`, `decompose_eval.py`, `full_eval.py`) and ablations (`ablate_controller.py`, `ablate_decompose.py`, `ablate_grounding.py`). **Never imported by `src/`** (enforced by a test) |
 
 ### Citations and ids
 
@@ -132,6 +151,7 @@ no downloads:
 | `PRISM_ANTI_FRAGMENTATION` / `PRISM_MAX_SUBQUERIES` / `PRISM_SUBQUERY_MERGE_SIMILARITY` / `PRISM_SUBQUERY_MIN_CONTENT_TERMS` | 1 / 4 / 0.85 / 2 | |
 | `PRISM_FUSION_TOP_K` / `PRISM_FUSION_QUOTA` / `PRISM_FUSION_NEAR_DUPLICATE` | 6 / 2 / 0.9 | |
 | `PRISM_CACHE_SIMILARITY` | 0.75 | 0 disables the speculative cache |
+| `PRISM_GROUNDING_JUDGE` / `PRISM_GROUNDING_MODE` / `PRISM_LEXICAL_SUPPORT_THRESHOLD` | `lexical` / `drop` / 0.8 | `nli` (optional model), `llm` (needs an LLM); `flag` keeps failures but reports them |
 
 ## Teammate setup (infrastructure, not done in Phase 1)
 
@@ -151,7 +171,9 @@ Nothing in this list has been run or verified yet.
    * Set `PRISM_COST_PER_1K_INPUT/OUTPUT` if the endpoint is billed.
    * Then fill in the missing ablation arms. `PRISM_LLM_PROVIDER=... make ablate` adds the measured
      `llm` controller row to `reports/PHASE_2_CONTROLLER_ABLATION.md`. `make ablate3` adds the `llm`
-     decomposer row to `reports/PHASE_3_ABLATION.md`.
+     decomposer row to `reports/PHASE_3_ABLATION.md`. `make ablate4` adds the `llm` judge row to
+     `reports/PHASE_4_GROUNDING_ABLATION.md`. Re-run `make full` with `PRISM_LLM_PROVIDER` set to
+     measure G4 on LLM-written claims.
 3. **Dense model / reranker (optional).** `make install-optional` installs
    sentence-transformers + faiss-cpu (pulls PyTorch). Verify RAM on the 4 GB target, pin the
    versions in `requirements-optional.txt`, then set `PRISM_DENSE_BACKEND=sentence_transformers`
@@ -164,6 +186,6 @@ Nothing in this list has been run or verified yet.
 * Corpus isolation: answers come only from `data/corpus/`; the extractive path quotes it verbatim.
 * No hardcoded prompts, queries or answers in `src/`; dev scenarios live in `eval/` only.
 * Every claim carries a citation that exists in the corpus, or the system emits uncertainty.
-* No cross-session state (the baseline is stateless; the controller's state is reset per utterance).
+* No cross-session state: sessions live only in memory, are looked up by exact id, and are destroyed on `end_session`.
 * Presentation-only turns are suppressed and never reach the corpus.
 * No multi-agent frameworks.
