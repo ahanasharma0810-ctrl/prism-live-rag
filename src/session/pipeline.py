@@ -180,7 +180,7 @@ class SessionPipeline:
             notes = [ledger.subintents[f"t{turn}.{q.id}"].uncertainty for q in plan.subqueries]
             answer = ledger.commit_version(compose_uncertainty(self._notes(ledger)))
             record = self._record(ledger, stream, answer.uncertainty)
-            session.last_output = record.answer or None
+            session.last_output = record.answer or record.uncertainty or None  # what the user saw
             return TurnOutcome(record, ledger.version, "no_evidence", stream,
                                DeltaDecision("new_subintent", [], "; ".join(n for n in notes if n)))
         vocab = self.stack.bm25.vocabulary
@@ -223,7 +223,7 @@ class SessionPipeline:
         grounding = await self._synthesize_and_verify(ledger, to_synthesize, trace, stages)
         answer = ledger.commit_version(compose_uncertainty(self._notes(ledger)))
         record = self._record(ledger, stream, answer.uncertainty)
-        session.last_output = record.answer or None
+        session.last_output = record.answer or record.uncertainty or None  # what the user saw
         kind = "first_answer" if first else decision.kind
         delta_citations = [c for c in ledger.citations() if c not in prior_citations]  # new in this version
         invalid = [c for c in extract_citations(record.answer) if not self.index.is_valid(c)]

@@ -1,9 +1,10 @@
 PYTHON ?= python3
 Q ?= What are the technical evaluation gates and their target thresholds?
 
-.PHONY: help install install-optional test audit index baseline eval replay controller ablate decompose ablate3 full ablate4 coverage replay-llm replay-offline llm-check demo stream schema manifest lock clean
+.PHONY: help install install-optional test audit index baseline eval replay controller ablate decompose ablate3 full ablate4 coverage replay-llm replay-offline llm-check demo all stream schema manifest lock clean
 
 help:
+	@echo "all               one-command clean run: venv + pinned deps + tests + indexes + full replay"
 	@echo "install           install pinned runtime + dev dependencies"
 	@echo "install-optional  install model-based backends (torch; not tested in Phase 1)"
 	@echo "test              run the test suite"
@@ -26,6 +27,9 @@ help:
 	@echo "stream            stream U=\"frag 1 | frag 2\" through controller + decomposition (demo)"
 	@echo "schema            regenerate schemas/*.schema.json from src/schemas.py"
 	@echo "manifest          recompute data/corpus/MANIFEST.json hashes"
+
+all:
+	bash scripts/run_all.sh
 
 install:
 	$(PYTHON) -m pip install -r requirements-dev.txt

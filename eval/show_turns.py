@@ -15,9 +15,9 @@ def main() -> int:
     res = json.loads(path.read_text(encoding="utf-8"))
     for t in res["turns"]:
         diff = {k: v for k, v in t["ledger_diff"].items() if v}
-        first = t["first_retrieval_s"]
+        first = "none" if t["first_retrieval_s"] is None else f"{t['first_retrieval_s']}s"
         print(f"{t['scenario']:<11} t{t['turn']}  v{t['version']}  {t['kind']:<17} "
-              f"retrievals={t['retrieval_calls']}  first_retrieval={first}s / utterance_end={t['utterance_end_s']}s")
+              f"retrievals={t['retrieval_calls']}  first_retrieval={first} / utterance_end={t['utterance_end_s']}s")
         print(f"             claims {diff}")
         if t["uncertainty"]:
             print(f"             uncertainty: {t['uncertainty']}")

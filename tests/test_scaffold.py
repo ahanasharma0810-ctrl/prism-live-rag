@@ -84,3 +84,15 @@ def test_demo_script_covers_required_items_and_files_exist():
     for name in set(re.findall(r"eval/dev_scenarios/(\w+\.json)", demo)) | {f"{s}.json" for s in
                                                                             re.findall(r"--scenario (\w+)", demo)}:
         assert (ROOT / "eval" / "dev_scenarios" / name).exists(), name
+
+
+def test_one_command_runner_is_valid_bash():
+    import os
+    import subprocess
+
+    script = ROOT / "scripts" / "run_all.sh"
+    assert os.access(script, os.X_OK)
+    assert subprocess.run(["bash", "-n", str(script)], capture_output=True).returncode == 0
+    text = script.read_text(encoding="utf-8")
+    for step in ("requirements-dev.txt", "pytest", "build_index", "eval/replay.py"):
+        assert step in text, step
