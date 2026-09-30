@@ -35,6 +35,7 @@ from src.session.store import Session, SessionStore
 from src.synthesis.citations import CitationIndex, extract_citations
 from src.synthesis.generator import ExtractiveGenerator, LLMGenerator, render_answer, synthesize_subintents
 from src.synthesis.grounding import GroundingReport, GroundingVerifier, make_judge
+from src.synthesis.presentation import present
 from src.synthesis.uncertainty import compose_uncertainty, subintent_uncertainty, supported_hits, turn_clarification
 from src.telemetry import events as ev
 from src.telemetry.logger import TelemetryLogger
@@ -115,8 +116,6 @@ class SessionPipeline:
 
     async def _presentation(self, session: Session, stream: StreamTurnResult) -> TurnOutcome:
         """Step 4.7 path: the answer is re-rendered, never re-retrieved."""
-        from src.synthesis.presentation import present
-
         ledger = session.ledger
         current = ledger.current
         prior_citations = ledger.citations()
