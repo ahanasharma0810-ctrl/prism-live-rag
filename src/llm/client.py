@@ -5,13 +5,23 @@
     resp.text, resp.parsed, resp.tokens_in, resp.tokens_out
 
 Providers:
-* `ollama`             POST {base_url}/api/generate               (local Ollama server)
+* `ollama`             POST {base_url}/api/generate               (local Ollama server; the
+                       playbook's intended runtime is a 7-8B-class instruct model)
 * `openai_compatible`  POST {base_url}/chat/completions           (any OpenAI-style endpoint)
-* `mock`               scripted responses, for tests only
+* `mock`               scripted responses, for unit tests only (never selected by configuration)
 
-The two HTTP providers were written against their documented request/response shapes and
-are exercised in tests against a local stub HTTP server only. **Neither has been run
-against a real Ollama server or hosted endpoint in Phase 1.**
+Model, URL, context window, keep-alive, timeout, retries and cost rates all come from
+PRISM_LLM_* settings; nothing machine-specific is hard-coded. Transient transport failures
+(unreachable host, timeout, HTTP 5xx) are retried with exponential backoff.
+
+`health()` / `check_llm()` / `require_llm()` verify before a run that the server is reachable
+and the configured model is pulled, and report its parameter size so a run records whether
+it used the intended 7-8B class (`python -m src.llm.client --check`). A configured but
+unavailable model is an error, never a silent fallback to the offline path.
+
+The HTTP providers follow the documented request/response shapes and are tested against local
+fake HTTP servers (tests/fake_ollama.py). **They have not been run against a real Ollama
+server with a 7-8B model in this repository's build environment.**
 
 JSON-constrained output: pass `schema` as a pydantic model class or a JSON-schema dict.
 The provider is asked for JSON; the reply is parsed (code fences tolerated) and validated.
@@ -50,6 +60,14 @@ class LLMError(RuntimeError):
 
 class LLMOutputError(LLMError):
     pass
+
+
+class LLMConnectionError(LLMError):
+    """Transport failure (unreachable host, timeout, HTTP 5xx). Retried; `transient` marks it."""
+
+    def __init__(self, message: str, transient: bool = True):
+        super().__init__(message)
+        self.transient = transient
 
 
 @dataclass
@@ -190,20 +208,81 @@ class LLMClient(ABC):
 # ------------------------------------------------------------------ HTTP helpers
 
 
-def _post_json(url: str, payload: dict, headers: dict[str, str], timeout: float) -> dict:
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json", **headers})
+def _request_json(url: str, payload: dict | None, headers: dict[str, str], timeout: float) -> dict:
+    """POST `payload` (or GET when None) and decode the JSON reply."""
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, method="GET" if payload is None else "POST",
+                                 headers={"Content-Type": "application/json", **headers})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", "replace")[:300]
-        raise LLMError(f"HTTP {exc.code} from {url}: {body}") from None
+        raise LLMConnectionError(f"HTTP {exc.code} from {url}: {body}", transient=exc.code >= 500) from None
     except urllib.error.URLError as exc:
-        raise LLMError(f"cannot reach {url}: {exc.reason}") from None
+        raise LLMConnectionError(f"cannot reach {url}: {exc.reason}") from None
+    except (TimeoutError, ConnectionError) as exc:
+        raise LLMConnectionError(f"connection to {url} failed: {exc}") from None
+    except json.JSONDecodeError as exc:
+        raise LLMConnectionError(f"non-JSON reply from {url}: {exc}", transient=False) from None
+
+
+def _post_json(url: str, payload: dict, headers: dict[str, str], timeout: float) -> dict:
+    return _request_json(url, payload, headers, timeout)
+
+
+async def _with_retries(call, retries: int, backoff_s: float = 0.5):
+    """Run a blocking HTTP call in a thread; retry transient failures with exponential backoff."""
+    for attempt in range(retries + 1):
+        try:
+            return await asyncio.to_thread(call)
+        except LLMConnectionError as exc:
+            if not exc.transient or attempt == retries:
+                raise
+            await asyncio.sleep(backoff_s * (2 ** attempt))
+
+
+# ------------------------------------------------------------------ model health
+
+
+def parse_parameter_size(value: str | None) -> float | None:
+    """'8.0B' -> 8.0, '567M' -> 0.567 (billions of parameters); None if unknown."""
+    if not value:
+        return None
+    m = re.match(r"^\s*([\d.]+)\s*([BbMmKk])", str(value))
+    if not m:
+        return None
+    scale = {"b": 1.0, "m": 1e-3, "k": 1e-6}[m.group(2).lower()]
+    return float(m.group(1)) * scale
+
+
+@dataclass
+class ModelHealth:
+    provider: str
+    model: str
+    base_url: str
+    reachable: bool
+    model_present: bool
+    parameter_size_b: float | None = None
+    quantization: str | None = None
+    in_intended_class: bool | None = None  # None when the server does not report a size
+    message: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return self.reachable and self.model_present
+
+
+def classify_size(size_b: float | None, settings: Settings) -> bool | None:
+    if size_b is None:
+        return None
+    return settings.llm_intended_min_b <= size_b <= settings.llm_intended_max_b
 
 
 class OllamaClient(LLMClient):
+    """Local Ollama server (the playbook's intended runtime: a 7-8B-class instruct model).
+    The model tag comes from PRISM_LLM_MODEL; nothing machine-specific is hard-coded."""
+
     provider = "ollama"
 
     def __init__(self, model: str, base_url: str, settings: Settings | None = None):
@@ -211,20 +290,47 @@ class OllamaClient(LLMClient):
         self.base_url = base_url.rstrip("/")
 
     async def _complete(self, prompt: str, system: str | None, json_schema: dict | None) -> RawCompletion:
+        s = self.settings
         payload: dict[str, Any] = {
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0, "num_predict": self.settings.llm_max_tokens},
+            "keep_alive": s.llm_keep_alive,
+            "options": {"temperature": 0, "num_predict": s.llm_max_tokens, "num_ctx": s.llm_num_ctx},
         }
         if system:
             payload["system"] = system
         if json_schema is not None:
             payload["format"] = json_schema
-        data = await asyncio.to_thread(
-            _post_json, f"{self.base_url}/api/generate", payload, {}, self.settings.llm_timeout_s
-        )
+        url = f"{self.base_url}/api/generate"
+        data = await _with_retries(lambda: _post_json(url, payload, {}, s.llm_timeout_s), s.llm_retries)
         return RawCompletion(data.get("response", ""), data.get("prompt_eval_count"), data.get("eval_count"))
+
+    async def health(self) -> ModelHealth:
+        h = ModelHealth(self.provider, self.model, self.base_url, reachable=False, model_present=False)
+        try:
+            tags = await _with_retries(
+                lambda: _request_json(f"{self.base_url}/api/tags", None, {}, min(self.settings.llm_timeout_s, 10)), 0)
+        except LLMError as exc:
+            h.message = (f"Ollama is not reachable at {self.base_url} ({exc}). Start it (`ollama serve`, or "
+                         f"`docker compose up ollama`) or set PRISM_LLM_BASE_URL.")
+            return h
+        h.reachable = True
+        wanted = {self.model, self.model if ":" in self.model else f"{self.model}:latest"}
+        entry = next((m for m in tags.get("models", []) if m.get("name") in wanted or m.get("model") in wanted), None)
+        if entry is None:
+            h.message = f"model {self.model!r} is not pulled on {self.base_url}; run `ollama pull {self.model}`."
+            return h
+        h.model_present = True
+        details = entry.get("details") or {}
+        h.parameter_size_b = parse_parameter_size(details.get("parameter_size"))
+        h.quantization = details.get("quantization_level")
+        h.in_intended_class = classify_size(h.parameter_size_b, self.settings)
+        h.message = "ok"
+        if h.in_intended_class is False:
+            h.message = (f"ok, but {self.model} reports {details.get('parameter_size')} parameters, outside the "
+                         f"intended {self.settings.llm_intended_min_b:g}-{self.settings.llm_intended_max_b:g}B class")
+        return h
 
 
 class OpenAICompatibleClient(LLMClient):
@@ -246,15 +352,35 @@ class OpenAICompatibleClient(LLMClient):
         if json_schema is not None:
             payload["response_format"] = {"type": "json_object"}
         headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
-        data = await asyncio.to_thread(
-            _post_json, f"{self.base_url}/chat/completions", payload, headers, self.settings.llm_timeout_s
-        )
+        url = f"{self.base_url}/chat/completions"
+        data = await _with_retries(lambda: _post_json(url, payload, headers, self.settings.llm_timeout_s),
+                                   self.settings.llm_retries)
         try:
             text = data["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"unexpected response shape: {str(data)[:200]}") from exc
         usage = data.get("usage") or {}
         return RawCompletion(text, usage.get("prompt_tokens"), usage.get("completion_tokens"))
+
+    async def health(self) -> ModelHealth:
+        return await _openai_health(self)
+
+
+async def _openai_health(client: OpenAICompatibleClient) -> ModelHealth:
+    h = ModelHealth(client.provider, client.model, client.base_url, reachable=False, model_present=False)
+    headers = {"Authorization": f"Bearer {client.api_key}"} if client.api_key else {}
+    try:
+        data = await asyncio.to_thread(
+            _request_json, f"{client.base_url}/models", None, headers, min(client.settings.llm_timeout_s, 10))
+    except LLMError as exc:
+        h.message = f"endpoint {client.base_url} is not reachable ({exc}); check PRISM_LLM_BASE_URL / PRISM_LLM_API_KEY."
+        return h
+    h.reachable = True
+    ids = {m.get("id") for m in data.get("data", []) if isinstance(m, dict)}
+    h.model_present = client.model in ids or not ids  # some servers do not list models
+    h.message = "ok (parameter size not reported by this API)" if h.model_present else \
+        f"model {client.model!r} not offered by {client.base_url}"
+    return h
 
 
 class MockLLMClient(LLMClient):
@@ -289,3 +415,51 @@ def make_llm_client(settings: Settings | None = None) -> LLMClient | None:
     if provider == "openai_compatible":
         return OpenAICompatibleClient(s.llm_model, s.llm_base_url, s.llm_api_key, settings=s)
     raise LLMError(f"unknown PRISM_LLM_PROVIDER {provider!r} (expected none, ollama or openai_compatible)")
+
+
+def check_llm(settings: Settings | None = None) -> ModelHealth | None:
+    """Health of the configured LLM, or None when PRISM_LLM_PROVIDER=none."""
+    client = make_llm_client(settings)
+    if client is None:
+        return None
+    return asyncio.run(client.health())
+
+
+def require_llm(settings: Settings | None = None) -> ModelHealth | None:
+    """Fail fast before a run: a configured but unreachable / unpulled model is an error, never a
+    silent fallback to the offline path."""
+    health = check_llm(settings)
+    if health is not None and not health.ok:
+        raise LLMError(health.message)
+    return health
+
+
+def main() -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Check the configured LLM (PRISM_LLM_* settings).")
+    parser.add_argument("--check", action="store_true", help="contact the server and verify the model")
+    args = parser.parse_args()
+    s = get_settings()
+    print(f"provider={s.llm_provider} model={s.llm_model or '-'} base_url={s.llm_base_url}")
+    if s.llm_provider == "none":
+        print("LLM disabled (PRISM_LLM_PROVIDER=none): the offline extractive path is used.")
+        return 0
+    if not args.check:
+        return 0
+    try:
+        health = check_llm(s)
+    except LLMError as exc:
+        print(f"error: {exc}")
+        return 1
+    print(f"reachable={health.reachable} model_present={health.model_present} "
+          f"parameter_size_b={health.parameter_size_b} quantization={health.quantization} "
+          f"intended_7_8b_class={health.in_intended_class}")
+    print(health.message)
+    return 0 if health.ok else 1
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())
