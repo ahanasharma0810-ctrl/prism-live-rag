@@ -1,0 +1,307 @@
+<!-- =====================================================================
+  Horoscope084.in — One-Page Landing Page (WordPress paste-ready)
+  HOW TO USE: In WordPress, create a page → add a "Custom HTML" block →
+  paste EVERYTHING in this file. Replace the shortcode IDs and contact
+  details marked with  ✏️  before publishing.
+  No JavaScript needed — works with any theme (best with a full-width /
+  "blank" page template, e.g. Astra / Kadence / Hello "Full Width").
+====================================================================== -->
+<style>
+  .h84{--bg:#0e0b1f;--bg2:#17122e;--card:#1e1838;--gold:#e8b84a;--gold2:#f6d98b;
+       --text:#ece8f6;--muted:#b4abcc;--line:rgba(232,184,74,.22);
+       font-family:"Poppins","Segoe UI",system-ui,sans-serif;color:var(--text);
+       background:var(--bg);line-height:1.65;margin:0;overflow-x:hidden}
+  .h84 *{box-sizing:border-box}
+  .h84 a{color:var(--gold);text-decoration:none}
+  .h84 h1,.h84 h2,.h84 h3{font-family:"Cinzel","Georgia",serif;color:var(--gold2);line-height:1.25;margin:0 0 .6em}
+  .h84 p{margin:0 0 1em;color:var(--text)}
+  .h84 .wrap{max-width:1140px;margin:0 auto;padding:0 20px}
+  .h84 section{padding:80px 0;scroll-margin-top:70px}
+  .h84 .alt{background:var(--bg2)}
+  .h84 .eyebrow{display:block;color:var(--gold);letter-spacing:.2em;text-transform:uppercase;font-size:.8rem;margin-bottom:.5em;text-align:center}
+  .h84 .title{text-align:center;font-size:clamp(1.7rem,3.5vw,2.5rem)}
+  .h84 .lead{text-align:center;max-width:720px;margin:0 auto 40px;color:var(--muted)}
+  .h84 .btn{display:inline-block;padding:13px 28px;border-radius:40px;font-weight:600;
+       background:linear-gradient(135deg,var(--gold),#c98f1f);color:#1a1230!important;transition:transform .2s}
+  .h84 .btn:hover{transform:translateY(-2px)}
+  .h84 .btn.ghost{background:transparent;border:1px solid var(--gold);color:var(--gold)!important}
+
+  /* ---------- NAVIGATION ---------- */
+  .h84 .nav{position:sticky;top:0;z-index:999;background:rgba(14,11,31,.95);
+       backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .h84 .nav .wrap{display:flex;align-items:center;justify-content:space-between;height:66px}
+  .h84 .logo{font-family:"Cinzel",Georgia,serif;font-size:1.35rem;color:var(--gold2)!important;font-weight:700}
+  .h84 .logo span{color:var(--gold)}
+  .h84 .menu{display:flex;gap:26px;list-style:none;margin:0;padding:0}
+  .h84 .menu a{color:var(--text);font-size:.95rem}
+  .h84 .menu a:hover{color:var(--gold)}
+  .h84 #h84-toggle{display:none}
+  .h84 .burger{display:none;cursor:pointer;font-size:1.7rem;color:var(--gold)}
+  @media(max-width:880px){
+    .h84 .burger{display:block}
+    .h84 .menu{position:absolute;top:66px;left:0;right:0;flex-direction:column;gap:0;
+         background:var(--bg2);max-height:0;overflow:hidden;transition:max-height .3s}
+    .h84 .menu a{display:block;padding:14px 20px;border-top:1px solid var(--line)}
+    .h84 #h84-toggle:checked ~ .menu{max-height:500px}
+  }
+
+  /* ---------- HERO ---------- */
+  .h84 .hero{text-align:center;padding:110px 0 100px;
+       background:radial-gradient(ellipse at top,#2d2160 0%,var(--bg) 70%)}
+  .h84 .hero h1{font-size:clamp(2rem,5vw,3.4rem)}
+  .h84 .hero p{color:var(--muted);max-width:680px;margin:0 auto 32px;font-size:1.1rem}
+  .h84 .hero .ctas{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  .h84 .zodiac{font-size:1.6rem;letter-spacing:.5em;color:var(--gold);opacity:.7;margin-bottom:20px}
+
+  /* ---------- CARDS ---------- */
+  .h84 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:22px}
+  .h84 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:28px;transition:border-color .2s}
+  .h84 .card:hover{border-color:var(--gold)}
+  .h84 .card .ico{font-size:2rem;margin-bottom:10px}
+  .h84 .card h3{font-size:1.15rem}
+  .h84 .card p{color:var(--muted);font-size:.95rem;margin:0}
+  .h84 .formbox{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:32px;max-width:760px;margin:44px auto 0}
+  .h84 .formbox h3{text-align:center}
+
+  /* ---------- ABOUT ---------- */
+  .h84 .about{display:grid;grid-template-columns:1fr 1.3fr;gap:46px;align-items:center}
+  .h84 .about .badge{aspect-ratio:1;border-radius:50%;border:2px solid var(--gold);
+       display:flex;align-items:center;justify-content:center;font-size:7rem;
+       background:radial-gradient(circle,#2d2160,var(--bg2));max-width:340px;margin:auto;width:100%}
+  .h84 .stats{display:flex;gap:30px;flex-wrap:wrap;margin-top:20px}
+  .h84 .stats b{display:block;font-size:1.8rem;color:var(--gold)}
+  .h84 .stats small{color:var(--muted)}
+  @media(max-width:800px){.h84 .about{grid-template-columns:1fr}}
+
+  /* ---------- CONTACT ---------- */
+  .h84 .contact{display:grid;grid-template-columns:1fr 1.4fr;gap:30px}
+  .h84 .info li{list-style:none;margin-bottom:16px;color:var(--muted)}
+  .h84 .info ul{padding:0;margin:0}
+  .h84 .info b{color:var(--text);display:block}
+  @media(max-width:800px){.h84 .contact{grid-template-columns:1fr}}
+
+  /* ---------- POLICIES (collapsible) ---------- */
+  .h84 details{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:14px}
+  .h84 summary{cursor:pointer;padding:18px 22px;font-weight:600;color:var(--gold2);list-style:none}
+  .h84 summary::-webkit-details-marker{display:none}
+  .h84 summary::after{content:"+";float:right;color:var(--gold)}
+  .h84 details[open] summary::after{content:"−"}
+  .h84 details .body{padding:0 22px 20px;color:var(--muted);font-size:.93rem}
+  .h84 details .body h4{color:var(--text);margin:1.2em 0 .3em}
+  .h84 details .body p,.h84 details .body li{color:var(--muted)}
+
+  /* ---------- FOOTER ---------- */
+  .h84 footer{border-top:1px solid var(--line);padding:30px 0;text-align:center;color:var(--muted);font-size:.9rem}
+  .h84 footer a{margin:0 10px}
+
+  /* Fluent Forms / Tutor LMS dark-theme tweaks */
+  .h84 .fluentform label{color:var(--text)!important}
+  .h84 .fluentform .ff-el-form-control{background:#120e26!important;color:var(--text)!important;border-color:var(--line)!important}
+  .h84 .fluentform .ff-btn-submit{background:var(--gold)!important;color:#1a1230!important;border-radius:30px!important}
+  .h84 .tutor-course-card,.h84 .tutor-card{background:var(--card)!important;border-color:var(--line)!important}
+  .h84 .tutor-course-name a,.h84 .tutor-card .tutor-course-name a{color:var(--gold2)!important}
+</style>
+
+<div class="h84">
+
+  <!-- ================= NAVIGATION MENU ================= -->
+  <nav class="nav">
+    <div class="wrap">
+      <a class="logo" href="#home">Horoscope<span>084</span></a>
+      <input type="checkbox" id="h84-toggle">
+      <label class="burger" for="h84-toggle" aria-label="Open menu">☰</label>
+      <ul class="menu">
+        <li><a href="#home">Home</a></li>
+        <li><a href="#services">Services</a></li>
+        <li><a href="#courses">Courses</a></li>
+        <li><a href="#about">About</a></li>
+        <li><a href="#contact">Contact</a></li>
+        <li><a href="#policies">Policies</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- ================= HERO ================= -->
+  <header class="hero" id="home">
+    <div class="wrap">
+      <div class="zodiac">♈♉♊♋♌♍♎♏♐♑♒♓</div>
+      <h1>Discover What the Stars Hold for You</h1>
+      <p>Authentic Vedic astrology consultations, Kundli analysis and certified astrology courses — guided by experienced Jyotish practitioners.</p>
+      <div class="ctas">
+        <a class="btn" href="#services">Book a Consultation</a>
+        <a class="btn ghost" href="#courses">Explore Courses</a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= SERVICES (Fluent Forms) ================= -->
+  <section id="services">
+    <div class="wrap">
+      <span class="eyebrow">Our Services</span>
+      <h2 class="title">Personal Astrology Consultations</h2>
+      <p class="lead">Choose a service below and fill in the booking form with your birth details. Our astrologer will get back to you within 24–48 hours.</p>
+
+      <div class="grid">
+        <div class="card"><div class="ico">📜</div><h3>Kundli / Birth Chart Reading</h3><p>Detailed analysis of your Janam Kundli — planets, houses, dashas and yogas.</p></div>
+        <div class="card"><div class="ico">💞</div><h3>Marriage &amp; Kundli Matching</h3><p>Guna Milan, Manglik dosha check and compatibility guidance for couples.</p></div>
+        <div class="card"><div class="ico">💼</div><h3>Career &amp; Finance</h3><p>Find favourable periods for jobs, business, investments and growth.</p></div>
+        <div class="card"><div class="ico">🏥</div><h3>Health &amp; Remedies</h3><p>Planetary remedies, gemstone suggestions, mantras and puja guidance.</p></div>
+        <div class="card"><div class="ico">🔢</div><h3>Numerology</h3><p>Name and number analysis for lucky numbers, dates and name corrections.</p></div>
+        <div class="card"><div class="ico">🏠</div><h3>Vastu Consultation</h3><p>Energy alignment for your home or office according to Vastu Shastra.</p></div>
+      </div>
+
+      <div class="formbox">
+        <h3>Book Your Consultation</h3>
+        <!-- ✏️ Replace 1 with your Fluent Forms "Service Booking" form ID -->
+        [fluentform id="1"]
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= COURSES (Tutor LMS) ================= -->
+  <section id="courses" class="alt">
+    <div class="wrap">
+      <span class="eyebrow">Learn Astrology</span>
+      <h2 class="title">Online Astrology Courses</h2>
+      <p class="lead">Learn Vedic astrology step by step — from basics to advanced prediction techniques. Study at your own pace with video lessons, quizzes and certificates.</p>
+
+      <!-- ✏️ Tutor LMS course grid. Change count / column as you like -->
+      [tutor_course count="6" column_per_row="3" order_by="ID" order="DESC"]
+
+      <p style="text-align:center;margin-top:30px">
+        <!-- ✏️ Link to your Tutor LMS courses archive page -->
+        <a class="btn" href="/courses/">View All Courses</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ================= ABOUT ================= -->
+  <section id="about">
+    <div class="wrap about">
+      <div class="badge">🔮</div>
+      <div>
+        <span class="eyebrow" style="text-align:left">About Us</span>
+        <h2>Ancient Wisdom, Modern Guidance</h2>
+        <p>Horoscope084.in is dedicated to sharing the timeless science of Vedic astrology (Jyotish Shastra) in a simple, honest and practical way. Our mission is to help people understand their life path, make confident decisions, and find peace through the guidance of the planets.</p>
+        <p>We offer personalised consultations for career, marriage, health and finance, and we teach astrology through structured online courses so that anyone can learn this sacred knowledge from home.</p>
+        <p>Every reading is prepared by hand after careful study of your birth chart — no automated, copy-paste reports.</p>
+        <!-- ✏️ Update these numbers -->
+        <div class="stats">
+          <div><b>10+</b><small>Years of experience</small></div>
+          <div><b>5,000+</b><small>Consultations</small></div>
+          <div><b>1,000+</b><small>Students</small></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CONTACT ================= -->
+  <section id="contact" class="alt">
+    <div class="wrap">
+      <span class="eyebrow">Contact Us</span>
+      <h2 class="title">Get in Touch</h2>
+      <p class="lead">Have a question about a service or course? Send us a message and we'll reply soon.</p>
+      <div class="contact">
+        <div class="card info">
+          <!-- ✏️ Your contact details -->
+          <ul>
+            <li><b>📧 Email</b><a href="mailto:support@horoscope084.in">support@horoscope084.in</a></li>
+            <li><b>📱 Phone / WhatsApp</b><a href="https://wa.me/910000000000">+91 00000 00000</a></li>
+            <li><b>📍 Location</b>India (consultations available online worldwide)</li>
+            <li><b>🕘 Hours</b>Mon – Sat, 10:00 AM – 7:00 PM IST</li>
+          </ul>
+        </div>
+        <div class="card">
+          <!-- ✏️ Replace 2 with your Fluent Forms "Contact" form ID -->
+          [fluentform id="2"]
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= TERMS & PRIVACY ================= -->
+  <section id="policies">
+    <div class="wrap" style="max-width:900px">
+      <span class="eyebrow">Legal</span>
+      <h2 class="title">Policies</h2>
+      <p class="lead">Last updated: November 2026</p>
+
+      <details id="terms">
+        <summary>Terms &amp; Conditions</summary>
+        <div class="body">
+          <p>By using horoscope084.in ("the Website") and purchasing any service or course, you agree to the following terms.</p>
+          <h4>1. Nature of Services</h4>
+          <p>Astrology readings, predictions and remedies are provided for guidance and spiritual purposes only. They are not a substitute for professional medical, legal, financial or psychological advice. Decisions you make based on a reading are your own responsibility.</p>
+          <h4>2. Eligibility</h4>
+          <p>You must be at least 18 years old, or use the Website under the supervision of a parent or guardian.</p>
+          <h4>3. Accuracy of Information</h4>
+          <p>Readings depend on the birth details you provide (date, time, place). We are not responsible for inaccuracies caused by incorrect or incomplete information.</p>
+          <h4>4. Payments</h4>
+          <p>All prices are listed in INR unless stated otherwise. Services are delivered only after successful payment.</p>
+          <h4>5. Refunds &amp; Cancellations</h4>
+          <p>Consultations may be rescheduled with at least 24 hours' notice. Once a report has been prepared or a consultation completed, it is non-refundable. Course refunds may be requested within 7 days of purchase if less than 20% of the course content has been viewed.</p>
+          <h4>6. Course Access</h4>
+          <p>Course access is for the individual purchaser only. Sharing login details, downloading, recording or redistributing course material is prohibited and may lead to account termination without refund.</p>
+          <h4>7. Intellectual Property</h4>
+          <p>All content on this Website — text, videos, graphics and course material — belongs to Horoscope084.in and may not be copied without written permission.</p>
+          <h4>8. Limitation of Liability</h4>
+          <p>Horoscope084.in shall not be liable for any direct or indirect loss arising from the use of our services or reliance on any prediction.</p>
+          <h4>9. Governing Law</h4>
+          <p>These terms are governed by the laws of India. Any disputes are subject to the jurisdiction of the courts of <!-- ✏️ your city -->[Your City], India.</p>
+          <h4>10. Changes</h4>
+          <p>We may update these terms at any time. Continued use of the Website means you accept the updated terms.</p>
+        </div>
+      </details>
+
+      <details id="privacy">
+        <summary>Privacy Policy</summary>
+        <div class="body">
+          <p>Your privacy matters to us. This policy explains what information we collect and how we use it.</p>
+          <h4>1. Information We Collect</h4>
+          <ul>
+            <li>Name, email address and phone number</li>
+            <li>Birth details (date, time and place of birth) for astrology readings</li>
+            <li>Account and course progress data when you enrol in a course</li>
+            <li>Payment confirmation details (card/UPI data is processed by our payment gateway — we do not store it)</li>
+            <li>Basic technical data such as IP address, browser type and cookies</li>
+          </ul>
+          <h4>2. How We Use Your Information</h4>
+          <ul>
+            <li>To prepare your readings and deliver consultations</li>
+            <li>To provide course access, certificates and support</li>
+            <li>To send booking confirmations, updates and (only with consent) newsletters</li>
+            <li>To improve our Website and services</li>
+          </ul>
+          <h4>3. Confidentiality of Readings</h4>
+          <p>Your birth details and the content of your consultations are kept strictly confidential and are never shared publicly.</p>
+          <h4>4. Sharing of Information</h4>
+          <p>We do not sell or rent your personal data. We share data only with trusted service providers (payment gateways, email and hosting services) needed to run the Website, or when required by law.</p>
+          <h4>5. Cookies</h4>
+          <p>We use cookies to keep you logged in, remember preferences and understand site traffic. You can disable cookies in your browser, but some features may not work.</p>
+          <h4>6. Data Security</h4>
+          <p>We use SSL encryption and reasonable security measures to protect your data. No online system is 100% secure, however.</p>
+          <h4>7. Your Rights</h4>
+          <p>You may request access to, correction of, or deletion of your personal data at any time by emailing <a href="mailto:support@horoscope084.in">support@horoscope084.in</a>.</p>
+          <h4>8. Contact</h4>
+          <p>For privacy questions, contact us at <a href="mailto:support@horoscope084.in">support@horoscope084.in</a>.</p>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ================= FOOTER ================= -->
+  <footer>
+    <div class="wrap">
+      <p style="color:inherit">
+        <a href="#services">Services</a>
+        <a href="#courses">Courses</a>
+        <a href="#about">About</a>
+        <a href="#contact">Contact</a>
+        <a href="#terms">Terms</a>
+        <a href="#privacy">Privacy</a>
+      </p>
+      <p style="color:inherit;margin:0">© 2026 Horoscope084.in — All rights reserved.</p>
+    </div>
+  </footer>
+
+</div>
